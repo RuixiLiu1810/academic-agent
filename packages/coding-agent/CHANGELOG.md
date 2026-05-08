@@ -5,6 +5,7 @@
 ### Changed
 
 - Changed coding-agent package metadata to depend on `@mariozechner/pi-agent-host` and expose host compatibility aliases.
+- Changed generic core compatibility modules to re-export shared implementations from `@mariozechner/pi-agent-host`.
 
 ### Fixed
 

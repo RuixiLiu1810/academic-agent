@@ -108,6 +108,7 @@ export {
 	parseCommandArgs,
 	substituteArgs,
 } from "./prompt-templates.js";
+export * from "./resolve-config-value.js";
 export type {
 	ResourceCollision,
 	ResourceDiagnostic,

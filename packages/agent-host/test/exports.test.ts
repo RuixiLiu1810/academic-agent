@@ -44,23 +44,34 @@ describe("agent-host facade", () => {
 	});
 
 	it("provides dedicated subpath modules for host resource primitives", async () => {
-		const [packageManager, sourceInfo, skills, promptTemplates, resourceLoader, extensions, compaction, exec] =
-			await Promise.all([
-				import("../src/package-manager.js"),
-				import("../src/source-info.js"),
-				import("../src/skills.js"),
-				import("../src/prompt-templates.js"),
-				import("../src/resource-loader.js"),
-				import("../src/extensions.js"),
-				import("../src/compaction/index.js"),
-				import("../src/exec.js"),
-			]);
+		const [
+			packageManager,
+			sourceInfo,
+			skills,
+			promptTemplates,
+			resourceLoader,
+			resolveConfigValue,
+			extensions,
+			compaction,
+			exec,
+		] = await Promise.all([
+			import("../src/package-manager.js"),
+			import("../src/source-info.js"),
+			import("../src/skills.js"),
+			import("../src/prompt-templates.js"),
+			import("../src/resource-loader.js"),
+			import("../src/resolve-config-value.js"),
+			import("../src/extensions.js"),
+			import("../src/compaction/index.js"),
+			import("../src/exec.js"),
+		]);
 
 		expect(packageManager.DefaultPackageManager).toBeTypeOf("function");
 		expect(sourceInfo.createSyntheticSourceInfo).toBeTypeOf("function");
 		expect(skills.loadSkills).toBeTypeOf("function");
 		expect(promptTemplates.loadPromptTemplates).toBeTypeOf("function");
 		expect(resourceLoader.DefaultResourceLoader).toBeTypeOf("function");
+		expect(resolveConfigValue.resolveConfigValue).toBeTypeOf("function");
 		expect(extensions.createExtensionRuntime).toBeTypeOf("function");
 		expect(compaction.compact).toBeTypeOf("function");
 		expect(exec.execCommand).toBeTypeOf("function");
@@ -78,6 +89,7 @@ describe("agent-host facade", () => {
 			"./skills": expect.any(Object),
 			"./prompt-templates": expect.any(Object),
 			"./resource-loader": expect.any(Object),
+			"./resolve-config-value": expect.any(Object),
 			"./extensions": expect.any(Object),
 			"./compaction": expect.any(Object),
 			"./extension-tool-types": expect.any(Object),

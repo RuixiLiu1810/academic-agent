@@ -54,6 +54,10 @@
 			"types": "./dist/resource-loader.d.ts",
 			"import": "./dist/resource-loader.js"
 		},
+		"./resolve-config-value": {
+			"types": "./dist/resolve-config-value.d.ts",
+			"import": "./dist/resolve-config-value.js"
+		},
 		"./extensions": {
 			"types": "./dist/extensions.d.ts",
 			"import": "./dist/extensions.js"
