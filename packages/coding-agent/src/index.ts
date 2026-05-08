@@ -1,4 +1,17 @@
 // Core session management
+export {
+	type AgentHostRuntime,
+	type AgentHostRuntimeDiagnostic,
+	type AgentHostServices,
+	type AgentHostSession,
+	type AgentHostSessionConfig,
+	type AgentHostSessionEvent,
+	type AgentHostSessionEventListener,
+	createAgentHostRuntime,
+	createAgentHostServices,
+	createAgentHostSession,
+	createAgentHostSessionFromServices,
+} from "@mariozechner/pi-agent-host";
 
 // Config paths
 export { getAgentDir, VERSION } from "./config.js";

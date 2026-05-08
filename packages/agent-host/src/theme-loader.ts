@@ -403,3 +403,19 @@ export function loadThemeFromPath(themePath: string): Theme {
 	const themeJson = parseThemeJsonContent(themePath, content);
 	return createTheme(themeJson, undefined, themePath);
 }
+
+const THEME_KEY = Symbol.for("@mariozechner/pi-agent-host:theme");
+
+export const theme: Theme = new Proxy({} as Theme, {
+	get(_target, prop) {
+		const currentTheme = (globalThis as Record<symbol, Theme>)[THEME_KEY];
+		if (!currentTheme) {
+			throw new Error("Theme not initialized.");
+		}
+		return (currentTheme as unknown as Record<string | symbol, unknown>)[prop];
+	},
+});
+
+export function setThemeInstance(themeInstance: Theme): void {
+	(globalThis as Record<symbol, Theme>)[THEME_KEY] = themeInstance;
+}

@@ -38,10 +38,27 @@ export {
 	InMemoryAuthStorageBackend,
 	type OAuthCredential,
 } from "./auth-storage.js";
+export * from "./compaction/index.js";
 export { getAgentDir, getSessionsDir } from "./config.js";
 export { createEventBus, type EventBus, type EventBusController } from "./event-bus.js";
+export type {
+	BashToolDetails,
+	BashToolInput,
+	EditToolDetails,
+	EditToolInput,
+	FindToolDetails,
+	FindToolInput,
+	GrepToolDetails,
+	GrepToolInput,
+	LsToolDetails,
+	LsToolInput,
+	ReadToolDetails,
+	ReadToolInput,
+	WriteToolInput,
+} from "./extension-tool-types.js";
 export * from "./extensions.js";
 export { createExtensionRuntime } from "./extensions.js";
+export type { ReadonlyFooterDataProvider } from "./footer-data-provider.js";
 export {
 	type AppKeybinding,
 	type AppKeybindings,

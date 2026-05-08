@@ -10,6 +10,9 @@ export const APP_NAME = "pi";
 export const CONFIG_DIR_NAME = ".pi";
 export const ENV_AGENT_DIR = "PI_AGENT_DIR";
 
+export const isBunBinary =
+	import.meta.url.includes("$bunfs") || import.meta.url.includes("~BUN") || import.meta.url.includes("%7EBUN");
+
 export function expandTildePath(path: string): string {
 	if (path === "~") return homedir();
 	if (path.startsWith("~/") || path.startsWith("~\\")) {

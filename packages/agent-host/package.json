@@ -18,6 +18,10 @@
 			"types": "./dist/event-bus.d.ts",
 			"import": "./dist/event-bus.js"
 		},
+		"./compaction": {
+			"types": "./dist/compaction/index.d.ts",
+			"import": "./dist/compaction/index.js"
+		},
 		"./auth-storage": {
 			"types": "./dist/auth-storage.d.ts",
 			"import": "./dist/auth-storage.js"
@@ -54,6 +58,10 @@
 			"types": "./dist/extensions.d.ts",
 			"import": "./dist/extensions.js"
 		},
+		"./extension-tool-types": {
+			"types": "./dist/extension-tool-types.d.ts",
+			"import": "./dist/extension-tool-types.js"
+		},
 		"./agent-session": {
 			"types": "./dist/agent-session.d.ts",
 			"import": "./dist/agent-session.js"
@@ -69,6 +77,18 @@
 		"./settings-manager": {
 			"types": "./dist/settings-manager.d.ts",
 			"import": "./dist/settings-manager.js"
+		},
+		"./theme-loader": {
+			"types": "./dist/theme-loader.d.ts",
+			"import": "./dist/theme-loader.js"
+		},
+		"./bash-executor": {
+			"types": "./dist/bash-executor.d.ts",
+			"import": "./dist/bash-executor.js"
+		},
+		"./exec": {
+			"types": "./dist/exec.d.ts",
+			"import": "./dist/exec.js"
 		}
 	},
 	"files": [
@@ -86,7 +106,6 @@
 	"dependencies": {
 		"@mariozechner/pi-agent-core": "^0.73.0",
 		"@mariozechner/pi-ai": "^0.73.0",
-		"@mariozechner/pi-coding-agent": "^0.73.0",
 		"@mariozechner/pi-tui": "^0.73.0",
 		"chalk": "^5.6.2",
 		"glob": "^11.0.3",
