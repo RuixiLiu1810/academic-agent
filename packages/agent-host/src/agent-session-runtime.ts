@@ -1,7 +1,12 @@
 export {
 	AgentSessionRuntime,
 	type AgentSessionRuntimeDiagnostic,
+	type AgentSessionServices,
+	type CreateAgentSessionFromServicesOptions,
 	type CreateAgentSessionRuntimeFactory,
 	type CreateAgentSessionRuntimeResult,
+	type CreateAgentSessionServicesOptions,
+	createAgentSessionFromServices,
 	createAgentSessionRuntime,
-} from "@mariozechner/pi-coding-agent/agent-session-runtime";
+	createAgentSessionServices,
+} from "./agent-session-runtime-impl.js";

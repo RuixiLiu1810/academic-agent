@@ -4,4 +4,4 @@ export {
 	type SourceInfo,
 	type SourceOrigin,
 	type SourceScope,
-} from "@mariozechner/pi-coding-agent/source-info";
+} from "./source-info-impl.js";

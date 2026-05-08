@@ -32,11 +32,8 @@ import {
 	modelsAreEqual,
 	resetApiProviders,
 } from "@mariozechner/pi-ai";
-import { theme } from "../modes/interactive/theme/theme.js";
-import { stripFrontmatter } from "../utils/frontmatter.js";
-import { sleep } from "../utils/sleep.js";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.js";
-import { type BashResult, executeBashWithOperations } from "./bash-executor.js";
+import { type BashOperations, type BashResult, executeBashWithOperations } from "./bash-executor.js";
 import {
 	type CompactionResult,
 	calculateContextTokens,
@@ -48,14 +45,13 @@ import {
 	shouldCompact,
 } from "./compaction/index.js";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
-import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.js";
-import { createToolHtmlRenderer } from "./export-html/tool-renderer.js";
 import {
 	type ContextUsage,
 	type ExtensionCommandContextActions,
 	type ExtensionErrorListener,
 	ExtensionRunner,
 	type ExtensionUIContext,
+	emitSessionShutdownEvent,
 	type InputSource,
 	type MessageEndEvent,
 	type MessageStartEvent,
@@ -74,8 +70,7 @@ import {
 	type TurnEndEvent,
 	type TurnStartEvent,
 	wrapRegisteredTools,
-} from "./extensions/index.js";
-import { emitSessionShutdownEvent } from "./extensions/runner.js";
+} from "./extensions.js";
 import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
@@ -86,9 +81,9 @@ import type { SettingsManager } from "./settings-manager.js";
 import type { SlashCommandInfo } from "./slash-commands.js";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.js";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.js";
-import { type BashOperations, createLocalBashOperations } from "./tools/bash.js";
-import { createAllToolDefinitions } from "./tools/index.js";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.js";
+import { stripFrontmatter } from "./utils/frontmatter.js";
+import { sleep } from "./utils/sleep.js";
 
 // ============================================================================
 // Skill Block Parsing
@@ -251,6 +246,9 @@ interface ToolDefinitionEntry {
 
 /** Standard thinking levels */
 const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
+const MISSING_BASH_EXECUTION_ERROR =
+	"Bash execution is not configured for this host. Provide options.operations or createDefaultBashOperations.";
+const MISSING_HTML_EXPORT_ERROR = "HTML export is not configured for this host. Provide htmlExporter.";
 
 // ============================================================================
 // AgentSession Class
@@ -2361,9 +2359,6 @@ export class AgentSession {
 		flagValues?: Map<string, boolean | string>;
 		includeAllExtensionTools?: boolean;
 	}): void {
-		const autoResizeImages = this.settingsManager.getImageAutoResize();
-		const shellCommandPrefix = this.settingsManager.getShellCommandPrefix();
-		const shellPath = this.settingsManager.getShellPath();
 		const baseToolDefinitions = this._baseToolDefinitionsOverride
 			? this._baseToolDefinitionsOverride
 			: this._baseToolsOverride
@@ -2373,10 +2368,7 @@ export class AgentSession {
 							createToolDefinitionFromAgentTool(tool),
 						]),
 					)
-				: createAllToolDefinitions(this._cwd, {
-						read: { autoResizeImages },
-						bash: { commandPrefix: shellCommandPrefix, shellPath },
-					});
+				: {};
 
 		this._baseToolDefinitions = new Map(
 			Object.entries(baseToolDefinitions).map(([name, tool]) => [name, tool as ToolDefinition]),
@@ -2393,8 +2385,8 @@ export class AgentSession {
 			extensionsResult.extensions,
 			extensionsResult.runtime,
 			this._cwd,
-			this.sessionManager,
-			this._modelRegistry,
+			this.sessionManager as unknown as ConstructorParameters<typeof ExtensionRunner>[3],
+			this._modelRegistry as unknown as ConstructorParameters<typeof ExtensionRunner>[4],
 		);
 		if (this._extensionRunnerRef) {
 			this._extensionRunnerRef.current = this._extensionRunner;
@@ -2406,7 +2398,7 @@ export class AgentSession {
 			? Object.keys(this._baseToolDefinitionsOverride)
 			: this._baseToolsOverride
 				? Object.keys(this._baseToolsOverride)
-				: ["read", "bash", "edit", "write"];
+				: [];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,
@@ -2601,20 +2593,19 @@ export class AgentSession {
 		const prefix = this.settingsManager.getShellCommandPrefix();
 		const shellPath = this.settingsManager.getShellPath();
 		const resolvedCommand = prefix ? `${prefix}\n${command}` : command;
+		const operations =
+			options?.operations ??
+			(this._createDefaultBashOperations ? this._createDefaultBashOperations({ shellPath }) : undefined);
+
+		if (!operations) {
+			throw new Error(MISSING_BASH_EXECUTION_ERROR);
+		}
 
 		try {
-			const result = await executeBashWithOperations(
-				resolvedCommand,
-				this.sessionManager.getCwd(),
-				options?.operations ??
-					(this._createDefaultBashOperations
-						? this._createDefaultBashOperations({ shellPath })
-						: createLocalBashOperations({ shellPath })),
-				{
-					onChunk,
-					signal: this._bashAbortController.signal,
-				},
-			);
+			const result = await executeBashWithOperations(resolvedCommand, this.sessionManager.getCwd(), operations, {
+				onChunk,
+				signal: this._bashAbortController.signal,
+			});
 
 			this.recordBashResult(command, result, options);
 			return result;
@@ -3032,28 +3023,16 @@ export class AgentSession {
 	 * @returns Path to exported file
 	 */
 	async exportToHtml(outputPath?: string): Promise<string> {
-		const themeName = this.settingsManager.getTheme();
-
-		if (this._htmlExporter) {
-			return this._htmlExporter(this.sessionManager, this.state, {
-				outputPath,
-				themeName,
-				getToolDefinition: (name) => this.getToolDefinition(name),
-				cwd: this.sessionManager.getCwd(),
-			});
+		if (!this._htmlExporter) {
+			throw new Error(MISSING_HTML_EXPORT_ERROR);
 		}
 
-		// Create tool renderer if we have an extension runner (for custom tool HTML rendering)
-		const toolRenderer: ToolHtmlRenderer = createToolHtmlRenderer({
-			getToolDefinition: (name) => this.getToolDefinition(name),
-			theme,
-			cwd: this.sessionManager.getCwd(),
-		});
-
-		return await exportSessionToHtml(this.sessionManager, this.state, {
+		const themeName = this.settingsManager.getTheme();
+		return this._htmlExporter(this.sessionManager, this.state, {
 			outputPath,
 			themeName,
-			toolRenderer,
+			getToolDefinition: (name) => this.getToolDefinition(name),
+			cwd: this.sessionManager.getCwd(),
 		});
 	}
 

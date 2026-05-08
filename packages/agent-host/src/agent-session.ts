@@ -6,4 +6,4 @@ export {
 	type ModelCycleResult,
 	type PromptOptions,
 	type SessionStats,
-} from "@mariozechner/pi-coding-agent/agent-session";
+} from "./agent-session-impl.js";

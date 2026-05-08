@@ -7,4 +7,4 @@ export {
 	loadSkillsFromDir,
 	type Skill,
 	type SkillFrontmatter,
-} from "@mariozechner/pi-coding-agent/skills";
+} from "./skills-impl.js";

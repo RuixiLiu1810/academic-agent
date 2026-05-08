@@ -87,8 +87,14 @@
 		"@mariozechner/pi-agent-core": "^0.73.0",
 		"@mariozechner/pi-ai": "^0.73.0",
 		"@mariozechner/pi-coding-agent": "^0.73.0",
+		"@mariozechner/pi-tui": "^0.73.0",
+		"chalk": "^5.6.2",
+		"glob": "^11.0.3",
+		"ignore": "^7.0.5",
+		"minimatch": "^10.0.3",
 		"proper-lockfile": "^4.1.2",
 		"typebox": "^1.1.24",
+		"yaml": "^2.8.2",
 		"uuid": "^14.0.0"
 	},
 	"devDependencies": {

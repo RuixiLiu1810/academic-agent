@@ -9,4 +9,4 @@ export {
 	type ProgressEvent,
 	type ResolvedPaths,
 	type ResolvedResource,
-} from "@mariozechner/pi-coding-agent/package-manager";
+} from "./package-manager-impl.js";

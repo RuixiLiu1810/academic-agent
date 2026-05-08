@@ -2,7 +2,9 @@ import { defineConfig } from "vitest/config";
 import { fileURLToPath } from "node:url";
 
 const aiSrcIndex = fileURLToPath(new URL("../ai/src/index.ts", import.meta.url));
+const aiSrcOAuth = fileURLToPath(new URL("../ai/src/oauth.ts", import.meta.url));
 const agentSrcIndex = fileURLToPath(new URL("../agent/src/index.ts", import.meta.url));
+const tuiSrcIndex = fileURLToPath(new URL("../tui/src/index.ts", import.meta.url));
 const codingAgentSrcIndex = fileURLToPath(new URL("../coding-agent/src/index.ts", import.meta.url));
 const codingAgentPackageManager = fileURLToPath(new URL("../coding-agent/src/core/package-manager.ts", import.meta.url));
 const codingAgentSourceInfo = fileURLToPath(new URL("../coding-agent/src/core/source-info.ts", import.meta.url));
@@ -28,7 +30,9 @@ export default defineConfig({
 	resolve: {
 		alias: [
 			{ find: /^@mariozechner\/pi-ai$/, replacement: aiSrcIndex },
+			{ find: /^@mariozechner\/pi-ai\/oauth$/, replacement: aiSrcOAuth },
 			{ find: /^@mariozechner\/pi-agent-core$/, replacement: agentSrcIndex },
+			{ find: /^@mariozechner\/pi-tui$/, replacement: tuiSrcIndex },
 			{ find: /^@mariozechner\/pi-agent-contracts$/, replacement: agentContractsSrcIndex },
 			{ find: /^@mariozechner\/pi-coding-agent\/package-manager$/, replacement: codingAgentPackageManager },
 			{ find: /^@mariozechner\/pi-coding-agent\/source-info$/, replacement: codingAgentSourceInfo },

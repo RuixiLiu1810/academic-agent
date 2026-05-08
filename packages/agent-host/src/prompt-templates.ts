@@ -5,4 +5,4 @@ export {
 	type PromptTemplate,
 	parseCommandArgs,
 	substituteArgs,
-} from "@mariozechner/pi-coding-agent/prompt-templates";
+} from "./prompt-templates-impl.js";

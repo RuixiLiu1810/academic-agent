@@ -6,4 +6,4 @@ export {
 	type ResourceDiagnostic,
 	type ResourceExtensionPaths,
 	type ResourceLoader,
-} from "@mariozechner/pi-coding-agent/resource-loader";
+} from "./resource-loader-impl.js";

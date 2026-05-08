@@ -1,5 +1,11 @@
 import { homedir } from "os";
-import { join } from "path";
+import { dirname, join, resolve } from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+export const APP_NAME = "pi";
 
 export const CONFIG_DIR_NAME = ".pi";
 export const ENV_AGENT_DIR = "PI_AGENT_DIR";
@@ -24,4 +30,20 @@ export function getAgentDir(): string {
 /** Get the root directory that stores session files grouped by cwd. */
 export function getSessionsDir(): string {
 	return join(getAgentDir(), "sessions");
+}
+
+export function getPackageDir(): string {
+	return resolve(__dirname, "..");
+}
+
+export function getReadmePath(): string {
+	return resolve(join(getPackageDir(), "README.md"));
+}
+
+export function getDocsPath(): string {
+	return resolve(join(getPackageDir(), "docs"));
+}
+
+export function getExamplesPath(): string {
+	return resolve(join(getPackageDir(), "examples"));
 }

@@ -1,17 +1,4 @@
 export type {
-	AgentSessionServices as AgentHostServices,
-	CreateAgentSessionFromServicesOptions as CreateAgentHostSessionFromServicesOptions,
-	CreateAgentSessionOptions as CreateAgentHostSessionOptions,
-	CreateAgentSessionResult as CreateAgentHostSessionResult,
-	CreateAgentSessionServicesOptions as CreateAgentHostServicesOptions,
-} from "@mariozechner/pi-coding-agent";
-export {
-	createAgentSession as createAgentHostSession,
-	createAgentSessionFromServices as createAgentHostSessionFromServices,
-	createAgentSessionServices as createAgentHostServices,
-	KeybindingsManager,
-} from "@mariozechner/pi-coding-agent";
-export type {
 	AgentSessionConfig as AgentHostSessionConfig,
 	AgentSessionEvent as AgentHostSessionEvent,
 	AgentSessionEventListener as AgentHostSessionEventListener,
@@ -22,14 +9,24 @@ export * from "./agent-session.js";
 export { AgentSession as AgentHostSession } from "./agent-session.js";
 export type {
 	AgentSessionRuntimeDiagnostic as AgentHostRuntimeDiagnostic,
+	AgentSessionServices as AgentHostServices,
+	CreateAgentSessionFromServicesOptions as CreateAgentHostSessionFromServicesOptions,
 	CreateAgentSessionRuntimeFactory as CreateAgentHostRuntimeFactory,
 	CreateAgentSessionRuntimeResult as CreateAgentHostRuntimeResult,
+	CreateAgentSessionServicesOptions as CreateAgentHostServicesOptions,
 } from "./agent-session-runtime.js";
 export * from "./agent-session-runtime.js";
 export {
 	AgentSessionRuntime as AgentHostRuntime,
+	createAgentSessionFromServices as createAgentHostSessionFromServices,
 	createAgentSessionRuntime as createAgentHostRuntime,
+	createAgentSessionServices as createAgentHostServices,
 } from "./agent-session-runtime.js";
+export type {
+	CreateAgentSessionOptions as CreateAgentHostSessionOptions,
+	CreateAgentSessionResult as CreateAgentHostSessionResult,
+} from "./agent-session-services.js";
+export { createAgentSession as createAgentHostSession } from "./agent-session-services.js";
 export {
 	type ApiKeyCredential,
 	type AuthCredential,
@@ -45,6 +42,16 @@ export { getAgentDir, getSessionsDir } from "./config.js";
 export { createEventBus, type EventBus, type EventBusController } from "./event-bus.js";
 export * from "./extensions.js";
 export { createExtensionRuntime } from "./extensions.js";
+export {
+	type AppKeybinding,
+	type AppKeybindings,
+	KEYBINDINGS,
+	type Keybinding,
+	type KeybindingsConfig,
+	KeybindingsManager,
+	type KeyId,
+	migrateKeybindingsConfig,
+} from "./keybindings.js";
 export {
 	type BashExecutionMessage,
 	BRANCH_SUMMARY_PREFIX,
