@@ -1,0 +1,111 @@
+{
+	"name": "@mariozechner/pi-agent-host",
+	"version": "0.73.0",
+	"description": "Reusable host facade for pi agent sessions, runtimes, resources, and session persistence",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./config": {
+			"types": "./dist/config.d.ts",
+			"import": "./dist/config.js"
+		},
+		"./event-bus": {
+			"types": "./dist/event-bus.d.ts",
+			"import": "./dist/event-bus.js"
+		},
+		"./auth-storage": {
+			"types": "./dist/auth-storage.d.ts",
+			"import": "./dist/auth-storage.js"
+		},
+		"./messages": {
+			"types": "./dist/messages.d.ts",
+			"import": "./dist/messages.js"
+		},
+		"./model-registry": {
+			"types": "./dist/model-registry.d.ts",
+			"import": "./dist/model-registry.js"
+		},
+		"./package-manager": {
+			"types": "./dist/package-manager.d.ts",
+			"import": "./dist/package-manager.js"
+		},
+		"./source-info": {
+			"types": "./dist/source-info.d.ts",
+			"import": "./dist/source-info.js"
+		},
+		"./skills": {
+			"types": "./dist/skills.d.ts",
+			"import": "./dist/skills.js"
+		},
+		"./prompt-templates": {
+			"types": "./dist/prompt-templates.d.ts",
+			"import": "./dist/prompt-templates.js"
+		},
+		"./resource-loader": {
+			"types": "./dist/resource-loader.d.ts",
+			"import": "./dist/resource-loader.js"
+		},
+		"./extensions": {
+			"types": "./dist/extensions.d.ts",
+			"import": "./dist/extensions.js"
+		},
+		"./agent-session": {
+			"types": "./dist/agent-session.d.ts",
+			"import": "./dist/agent-session.js"
+		},
+		"./agent-session-runtime": {
+			"types": "./dist/agent-session-runtime.d.ts",
+			"import": "./dist/agent-session-runtime.js"
+		},
+		"./session-manager": {
+			"types": "./dist/session-manager.d.ts",
+			"import": "./dist/session-manager.js"
+		},
+		"./settings-manager": {
+			"types": "./dist/settings-manager.d.ts",
+			"import": "./dist/settings-manager.js"
+		}
+	},
+	"files": [
+		"dist",
+		"README.md",
+		"CHANGELOG.md"
+	],
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsgo -p tsconfig.build.json",
+		"check": "tsgo --noEmit",
+		"test": "vitest --run",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"dependencies": {
+		"@mariozechner/pi-agent-core": "^0.73.0",
+		"@mariozechner/pi-ai": "^0.73.0",
+		"@mariozechner/pi-coding-agent": "^0.73.0",
+		"proper-lockfile": "^4.1.2",
+		"typebox": "^1.1.24",
+		"uuid": "^14.0.0"
+	},
+	"devDependencies": {
+		"@types/proper-lockfile": "^4.1.4",
+		"@types/node": "^24.3.0",
+		"shx": "^0.4.0",
+		"typescript": "^5.7.3",
+		"vitest": "^3.2.4"
+	},
+	"keywords": [
+		"agent",
+		"host",
+		"runtime"
+	],
+	"author": "Mario Zechner",
+	"license": "MIT",
+	"engines": {
+		"node": ">=20.0.0"
+	}
+}

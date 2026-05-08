@@ -1,0 +1,42 @@
+{
+	"name": "@mariozechner/pi-lead-agent",
+	"version": "0.73.0",
+	"description": "Lead orchestration agent for academic research and writing workflows",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist",
+		"profiles",
+		"README.md",
+		"CHANGELOG.md"
+	],
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsgo -p tsconfig.build.json",
+		"check": "tsgo --noEmit",
+		"test": "vitest --run",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"dependencies": {
+		"@mariozechner/pi-agent-contracts": "^0.73.0",
+		"@mariozechner/pi-agent-host": "^0.73.0",
+		"@mariozechner/pi-coding-agent": "^0.73.0"
+	},
+	"devDependencies": {
+		"@types/node": "^24.3.0",
+		"shx": "^0.4.0",
+		"typescript": "^5.7.3",
+		"vitest": "^3.2.4"
+	},
+	"keywords": [
+		"agent",
+		"academic",
+		"orchestration"
+	],
+	"author": "Mario Zechner",
+	"license": "MIT",
+	"engines": {
+		"node": ">=20.0.0"
+	}
+}

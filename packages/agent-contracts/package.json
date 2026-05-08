@@ -1,0 +1,36 @@
+{
+	"name": "@mariozechner/pi-agent-contracts",
+	"version": "0.73.0",
+	"description": "Shared contracts for pi agent orchestration, workers, artifacts, and acceptance reports",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"files": [
+		"dist",
+		"README.md",
+		"CHANGELOG.md"
+	],
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsgo -p tsconfig.build.json",
+		"check": "tsgo --noEmit",
+		"test": "vitest --run",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"devDependencies": {
+		"@types/node": "^24.3.0",
+		"shx": "^0.4.0",
+		"typescript": "^5.7.3",
+		"vitest": "^3.2.4"
+	},
+	"keywords": [
+		"agent",
+		"orchestration",
+		"contracts"
+	],
+	"author": "Mario Zechner",
+	"license": "MIT",
+	"engines": {
+		"node": ">=20.0.0"
+	}
+}

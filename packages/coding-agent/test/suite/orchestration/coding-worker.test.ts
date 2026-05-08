@@ -1,0 +1,56 @@
+import { fauxAssistantMessage } from "@mariozechner/pi-ai";
+import { afterEach, describe, expect, it } from "vitest";
+import { buildCodingWorkerPrompt, runCodingWorker } from "../../../src/core/orchestration/coding-worker.js";
+import { createHarness, type Harness } from "../harness.js";
+
+describe("coding worker adapter", () => {
+	const harnesses: Harness[] = [];
+
+	afterEach(() => {
+		while (harnesses.length > 0) {
+			harnesses.pop()?.cleanup();
+		}
+	});
+
+	it("turns a WorkerRequest into a structured WorkerResult", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("Worker completed the evidence pass.")]);
+
+		const result = await runCodingWorker(
+			{
+				taskId: "task-1",
+				workerType: "researcher",
+				objective: "Review the attached notes for evidence gaps.",
+				constraints: ["Do not edit files"],
+				inputArtifacts: [],
+				expectedOutputs: ["gap summary"],
+				acceptanceCriteria: ["mentions missing evidence"],
+			},
+			{ session: harness.session },
+		);
+
+		expect(result).toMatchObject({
+			taskId: "task-1",
+			status: "success",
+			summary: "Worker completed the evidence pass.",
+		});
+		expect(result.structuredOutputs?.sessionId).toBe(harness.session.sessionId);
+	});
+
+	it("includes constraints, outputs, and acceptance criteria in the worker prompt", () => {
+		const prompt = buildCodingWorkerPrompt({
+			taskId: "task-2",
+			workerType: "reviewer",
+			objective: "Audit claims.",
+			constraints: ["Use manuscript only"],
+			inputArtifacts: [],
+			expectedOutputs: ["claim audit"],
+			acceptanceCriteria: ["no unsupported claims"],
+		});
+
+		expect(prompt).toContain("Use manuscript only");
+		expect(prompt).toContain("claim audit");
+		expect(prompt).toContain("no unsupported claims");
+	});
+});

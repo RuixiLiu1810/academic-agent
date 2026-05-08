@@ -149,6 +149,12 @@ export {
 export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.js";
 export { convertToLlm } from "./core/messages.js";
 export { ModelRegistry } from "./core/model-registry.js";
+// Worker orchestration adapter
+export {
+	buildCodingWorkerPrompt,
+	type RunCodingWorkerOptions,
+	runCodingWorker,
+} from "./core/orchestration/coding-worker.js";
 export type {
 	PackageManager,
 	PathMetadata,
@@ -158,6 +164,13 @@ export type {
 	ResolvedResource,
 } from "./core/package-manager.js";
 export { DefaultPackageManager } from "./core/package-manager.js";
+export {
+	expandPromptTemplate,
+	type LoadPromptTemplatesOptions,
+	loadPromptTemplates,
+	parseCommandArgs,
+	substituteArgs,
+} from "./core/prompt-templates.js";
 export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.js";
 export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.js";
 // SDK for programmatic usage
@@ -222,13 +235,14 @@ export {
 export {
 	formatSkillsForPrompt,
 	type LoadSkillsFromDirOptions,
+	type LoadSkillsOptions,
 	type LoadSkillsResult,
 	loadSkills,
 	loadSkillsFromDir,
 	type Skill,
 	type SkillFrontmatter,
 } from "./core/skills.js";
-export { createSyntheticSourceInfo } from "./core/source-info.js";
+export { createSourceInfo, createSyntheticSourceInfo } from "./core/source-info.js";
 // Tools
 export {
 	type BashOperations,
