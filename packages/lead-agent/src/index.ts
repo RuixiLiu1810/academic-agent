@@ -15,6 +15,9 @@ import { createAcceptanceReport, createExecutionTrace } from "@mariozechner/pi-a
 import { SessionManager } from "@mariozechner/pi-agent-host";
 import { runCodingWorker } from "@mariozechner/pi-coding-agent";
 
+export type AcademicTaskType = "writing" | "research" | "review" | "revision" | "methods" | "citation";
+export type LeadAgentDispatchMode = "auto" | "direct" | "worker";
+
 export interface LeadAgentTaskRequest {
 	taskId?: string;
 	objective: string;
@@ -23,6 +26,9 @@ export interface LeadAgentTaskRequest {
 	expectedOutputs?: string[];
 	acceptanceCriteria?: string[];
 	metadata?: JsonObject;
+	taskType?: AcademicTaskType;
+	profileId?: string;
+	dispatchMode?: LeadAgentDispatchMode;
 }
 
 export interface LeadAgentDecision {
@@ -206,10 +212,47 @@ function includesAny(text: string, terms: readonly string[]): boolean {
 	return terms.some((term) => normalized.includes(term));
 }
 
+function profileIdForTaskType(taskType: AcademicTaskType): string | undefined {
+	switch (taskType) {
+		case "writing":
+			return undefined;
+		case "research":
+			return "researcher";
+		case "review":
+			return "reviewer";
+		case "revision":
+			return "reviser";
+		case "methods":
+			return "method-auditor";
+		case "citation":
+			return "citation-checker";
+	}
+}
+
+function findProfile(profiles: readonly WorkerProfile[], profileId: string | undefined): WorkerProfile | undefined {
+	if (!profileId) {
+		return undefined;
+	}
+	return profiles.find((profile) => profile.id === profileId);
+}
+
 function chooseWorkerProfile(
 	request: LeadAgentTaskRequest,
 	profiles: readonly WorkerProfile[],
 ): WorkerProfile | undefined {
+	const explicitProfile = findProfile(profiles, request.profileId);
+	if (explicitProfile) {
+		return explicitProfile;
+	}
+	if (request.taskType) {
+		const taskProfile = findProfile(profiles, profileIdForTaskType(request.taskType));
+		if (taskProfile) {
+			return taskProfile;
+		}
+		if (request.taskType === "writing") {
+			return undefined;
+		}
+	}
 	const objective = request.objective;
 	if (includesAny(objective, ["citation", "reference", "引用", "参考文献"])) {
 		return profiles.find((profile) => profile.id === "citation-checker");
@@ -235,8 +278,26 @@ export function planLeadAgentTask(
 	request: LeadAgentTaskRequest,
 	profiles: readonly WorkerProfile[] = DEFAULT_ACADEMIC_PROFILES,
 ): LeadAgentDecision {
+	if (request.dispatchMode === "direct") {
+		return {
+			mode: "direct",
+			reason: "Task was forced into direct lead-author mode by dispatchMode.",
+		};
+	}
 	const profile = chooseWorkerProfile(request, profiles);
 	if (!profile) {
+		if (request.dispatchMode === "worker") {
+			const fallbackProfile = profiles.find((candidate) => candidate.id === "researcher") ?? profiles[0];
+			if (fallbackProfile) {
+				return {
+					mode: "worker",
+					workerType: fallbackProfile.id,
+					profileId: fallbackProfile.id,
+					reason:
+						"Worker dispatch was forced; no explicit profile matched, so the researcher profile was selected.",
+				};
+			}
+		}
 		return {
 			mode: "direct",
 			reason: "Task appears to require unified lead-author writing or revision rather than a separable worker pass.",

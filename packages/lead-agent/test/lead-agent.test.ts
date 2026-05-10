@@ -174,4 +174,80 @@ Use the custom audit role.
 		});
 		expect(result.finalOutput).toContain("not accepted");
 	});
+
+	it("routes explicit citation task type to the citation checker profile", async () => {
+		const runtime = createLeadAgentRuntime({
+			workerRunner: async (request) => ({
+				taskId: request.taskId,
+				status: "success",
+				summary: "citation audit completed",
+				structuredOutputs: { expectedOutputs: request.expectedOutputs },
+				producedArtifacts: [],
+				warnings: [],
+				openQuestions: [],
+				executionTrace: createExecutionTrace("run-explicit-citation"),
+			}),
+		});
+
+		const result = await runtime.run({
+			taskId: "task-explicit-citation",
+			objective: "Check this paragraph.",
+			taskType: "citation",
+			expectedOutputs: ["citation audit"],
+		});
+
+		expect(result.decision).toMatchObject({
+			mode: "worker",
+			profileId: "citation-checker",
+			workerType: "citation-checker",
+		});
+		expect(result.acceptanceReport?.accepted).toBe(true);
+	});
+
+	it("lets explicit profile override task type", async () => {
+		const runtime = createLeadAgentRuntime({
+			workerRunner: async (request) => ({
+				taskId: request.taskId,
+				status: "success",
+				summary: "methods audit completed",
+				structuredOutputs: { expectedOutputs: request.expectedOutputs },
+				producedArtifacts: [],
+				warnings: [],
+				openQuestions: [],
+				executionTrace: createExecutionTrace("run-profile-override"),
+			}),
+		});
+
+		const result = await runtime.run({
+			taskId: "task-profile-override",
+			objective: "Review this paragraph.",
+			taskType: "citation",
+			profileId: "method-auditor",
+			expectedOutputs: ["methods audit"],
+		});
+
+		expect(result.decision).toMatchObject({
+			mode: "worker",
+			profileId: "method-auditor",
+			workerType: "method-auditor",
+		});
+		expect(result.acceptanceReport?.accepted).toBe(true);
+	});
+
+	it("honors direct dispatch override even when a worker profile matches", async () => {
+		const runtime = createLeadAgentRuntime({
+			workerRunner: async () => {
+				throw new Error("worker should not run");
+			},
+		});
+
+		const result = await runtime.run({
+			taskId: "task-direct-override",
+			objective: "Review this manuscript for citation gaps.",
+			dispatchMode: "direct",
+		});
+
+		expect(result.decision.mode).toBe("direct");
+		expect(result.finalOutput).toContain("Review this manuscript");
+	});
 });
