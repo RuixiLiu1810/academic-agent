@@ -10,11 +10,38 @@ Acceptance currently checks worker status, explicit expected outputs, warnings, 
 
 Academic profiles live in `profiles/*.md` and are loaded into `WorkerProfile` values. Each profile can define a role prompt, capabilities, output requirements, and an acceptance checklist without changing the runtime protocol.
 
-From the repo root, run the local source CLI with:
+## Source CLI
+
+The source-level CLI is intentionally available before choosing a final binary name:
 
 ```bash
-./lead-agent-test.sh --direct "Rewrite this paragraph into concise academic Chinese."
+./lead-agent-test.sh --task-type writing --dispatch direct "Rewrite this paragraph into concise academic Chinese."
 ```
+
+Common options:
+
+```bash
+./lead-agent-test.sh \
+  --task-type citation \
+  --profile citation-checker \
+  --expected-output "citation audit" \
+  --artifact-dir .tmp/lead-artifacts \
+  --session-dir .tmp/lead-sessions \
+  --output markdown \
+  "Check whether the manuscript claims are supported by the evidence notes."
+```
+
+Machine-readable output:
+
+```bash
+./lead-agent-test.sh --json --task-type review --expected-output "review memo" "Review this excerpt."
+```
+
+The CLI supports `--task-type auto|writing|research|review|revision|methods|citation`, `--profile <id>`, `--dispatch auto|direct|worker`, `--artifact-dir <path>`, `--session-dir <path>`, and `--output markdown|json`.
+
+`--session-dir` persists the lead session through `agent-host` `SessionManager`. Without `--session-dir`, the source CLI uses an in-memory session to preserve the current test-runner behavior.
+
+`--artifact-dir` writes `final-output.md`, `lead-result.json`, `acceptance-report.json` when available, and `artifacts.json`.
 
 ## Academic Workflow Smoke
 

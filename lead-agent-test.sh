@@ -9,4 +9,5 @@ if [[ ! -x "$TSX_BIN" ]]; then
   exit 1
 fi
 
+# Source-level runner for the formal lead-agent CLI; final binary naming is intentionally deferred.
 "$TSX_BIN" "$SCRIPT_DIR/packages/lead-agent/src/cli.ts" "$@"
