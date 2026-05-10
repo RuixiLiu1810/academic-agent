@@ -46,6 +46,10 @@ export interface CreateArtifactInput {
 	lineage?: string[];
 }
 
+export interface CreateAcademicArtifactInput extends Omit<CreateArtifactInput, "kind"> {
+	kind: AcademicArtifactKind;
+}
+
 export interface UpdateArtifactInput {
 	content: string;
 	metadata?: JsonObject;
@@ -59,7 +63,7 @@ export interface ArtifactStore {
 	manifest(): ArtifactManifest;
 }
 
-function toRef(artifact: StoredArtifact): ArtifactRef {
+export function artifactToRef(artifact: StoredArtifact): ArtifactRef {
 	return {
 		id: artifact.id,
 		kind: artifact.kind,
@@ -69,6 +73,32 @@ function toRef(artifact: StoredArtifact): ArtifactRef {
 		version: artifact.version,
 		metadata: artifact.metadata,
 	};
+}
+
+export function createAcademicArtifact(store: ArtifactStore, input: CreateAcademicArtifactInput): StoredArtifact {
+	return store.create(input);
+}
+
+export function resolveArtifactLineage(store: ArtifactStore, artifactId: string): StoredArtifact[] {
+	const artifact = store.get(artifactId);
+	if (!artifact) {
+		return [];
+	}
+	const resolved = new Map<string, StoredArtifact>();
+	const visit = (id: string): void => {
+		const current = store.get(id);
+		if (!current || resolved.has(current.id)) {
+			return;
+		}
+		resolved.set(current.id, current);
+		for (const parentId of current.lineage) {
+			visit(parentId);
+		}
+	};
+	for (const parentId of artifact.lineage) {
+		visit(parentId);
+	}
+	return [...resolved.values()];
 }
 
 function mediaTypeForFilename(filename: string): string {
@@ -221,7 +251,7 @@ export class MemoryArtifactStore implements ArtifactStore {
 			id: this.manifestId,
 			createdAt: this.createdAt,
 			updatedAt: new Date().toISOString(),
-			artifacts: this.list().map(toRef),
+			artifacts: this.list().map(artifactToRef),
 		};
 	}
 }
@@ -312,7 +342,7 @@ export class FileSystemArtifactStore implements ArtifactStore {
 			id: this.data.manifestId,
 			createdAt: this.data.createdAt,
 			updatedAt: new Date().toISOString(),
-			artifacts: this.list().map(toRef),
+			artifacts: this.list().map(artifactToRef),
 		};
 	}
 }
