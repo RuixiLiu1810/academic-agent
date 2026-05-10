@@ -1,7 +1,12 @@
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { basename, extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type {
+	AcceptanceIssue,
 	AcceptanceReport,
 	ArtifactRef,
 	JsonObject,
+	JsonValue,
 	WorkerProfile,
 	WorkerRequest,
 	WorkerResult,
@@ -51,6 +56,8 @@ export interface LeadAgentRuntime {
 	profiles: readonly WorkerProfile[];
 	sessionManager: SessionManager;
 }
+
+export const DEFAULT_ACADEMIC_PROFILE_DIR = fileURLToPath(new URL("../profiles", import.meta.url));
 
 export const DEFAULT_ACADEMIC_PROFILES: WorkerProfile[] = [
 	{
@@ -103,6 +110,97 @@ export const DEFAULT_ACADEMIC_PROFILES: WorkerProfile[] = [
 	},
 ];
 
+function slugToTitle(slug: string): string {
+	return slug
+		.split("-")
+		.filter((part) => part.length > 0)
+		.map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
+		.join(" ");
+}
+
+function normalizeHeading(value: string): string {
+	return value.trim().toLowerCase();
+}
+
+function sectionText(markdown: string, heading: string): string | undefined {
+	const normalizedHeading = normalizeHeading(heading);
+	const lines = markdown.split(/\r?\n/);
+	let collecting = false;
+	const collected: string[] = [];
+	for (const line of lines) {
+		const headingMatch = /^##\s+(.+?)\s*$/.exec(line);
+		if (headingMatch) {
+			if (collecting) {
+				break;
+			}
+			collecting = normalizeHeading(headingMatch[1] ?? "") === normalizedHeading;
+			continue;
+		}
+		if (collecting) {
+			collected.push(line);
+		}
+	}
+	const text = collected.join("\n").trim();
+	return text.length > 0 ? text : undefined;
+}
+
+function sectionList(markdown: string, heading: string): string[] {
+	const text = sectionText(markdown, heading);
+	if (!text) {
+		return [];
+	}
+	return text
+		.split(/\r?\n/)
+		.map((line) => line.trim())
+		.filter((line) => line.startsWith("- "))
+		.map((line) => line.slice(2).trim())
+		.filter((line) => line.length > 0);
+}
+
+function titleFromMarkdown(markdown: string, fallback: string): string {
+	const title = /^#\s+(.+?)\s*$/m.exec(markdown)?.[1]?.trim();
+	return title && title.length > 0 ? title : fallback;
+}
+
+function descriptionFromMarkdown(markdown: string): string | undefined {
+	const withoutTitle = markdown.replace(/^#\s+.+?$/m, "").trim();
+	const beforeSection = withoutTitle.split(/^##\s+/m)[0]?.trim();
+	return beforeSection && beforeSection.length > 0 ? beforeSection.replace(/\s+/g, " ") : undefined;
+}
+
+export function parseAcademicProfileMarkdown(id: string, markdown: string): WorkerProfile {
+	const fallbackName = slugToTitle(id);
+	const description = descriptionFromMarkdown(markdown);
+	const rolePrompt = sectionText(markdown, "Role Prompt") ?? description;
+	const capabilities = sectionList(markdown, "Capabilities");
+	const expectedOutputs = sectionList(markdown, "Output Requirements");
+	const acceptanceChecklist = sectionList(markdown, "Acceptance Checklist");
+	return {
+		id,
+		name: titleFromMarkdown(markdown, fallbackName),
+		description,
+		rolePrompt,
+		capabilities: capabilities.length > 0 ? capabilities : [id],
+		expectedOutputs: expectedOutputs.length > 0 ? expectedOutputs : undefined,
+		acceptanceChecklist: acceptanceChecklist.length > 0 ? acceptanceChecklist : undefined,
+	};
+}
+
+export function loadAcademicProfilesFromDir(profileDir = DEFAULT_ACADEMIC_PROFILE_DIR): WorkerProfile[] {
+	if (!existsSync(profileDir)) {
+		return [...DEFAULT_ACADEMIC_PROFILES];
+	}
+	const profileFiles = readdirSync(profileDir)
+		.filter((filename) => extname(filename) === ".md")
+		.sort();
+	const profiles = profileFiles.map((filename) => {
+		const id = basename(filename, ".md");
+		const markdown = readFileSync(join(profileDir, filename), "utf8");
+		return parseAcademicProfileMarkdown(id, markdown);
+	});
+	return profiles.length > 0 ? profiles : [...DEFAULT_ACADEMIC_PROFILES];
+}
+
 function includesAny(text: string, terms: readonly string[]): boolean {
 	const normalized = text.toLowerCase();
 	return terms.some((term) => normalized.includes(term));
@@ -124,6 +222,11 @@ function chooseWorkerProfile(
 	}
 	if (includesAny(objective, ["literature", "evidence", "research", "文献", "证据", "检索"])) {
 		return profiles.find((profile) => profile.id === "researcher");
+	}
+	for (const profile of profiles) {
+		if (includesAny(objective, [profile.id, profile.name, ...profile.capabilities])) {
+			return profile;
+		}
 	}
 	return undefined;
 }
@@ -208,6 +311,87 @@ function synthesizeWorkerResult(
 	};
 }
 
+function normalizeForMatch(value: string): string {
+	return value.trim().toLowerCase();
+}
+
+function textIncludesExpected(text: string, expected: string): boolean {
+	const normalizedText = normalizeForMatch(text);
+	const normalizedExpected = normalizeForMatch(expected);
+	return normalizedExpected.length === 0 || normalizedText.includes(normalizedExpected);
+}
+
+function artifactMatchesExpected(artifact: ArtifactRef, expected: string): boolean {
+	return [artifact.id, artifact.kind, artifact.uri, artifact.title ?? "", artifact.mediaType ?? ""].some((value) =>
+		textIncludesExpected(value, expected),
+	);
+}
+
+function jsonValueMatchesExpected(value: JsonValue | undefined, expected: string): boolean {
+	if (value === undefined || value === null) {
+		return false;
+	}
+	if (typeof value === "string") {
+		return textIncludesExpected(value, expected);
+	}
+	if (typeof value === "number" || typeof value === "boolean") {
+		return textIncludesExpected(String(value), expected);
+	}
+	if (Array.isArray(value)) {
+		return value.some((item) => jsonValueMatchesExpected(item, expected));
+	}
+	return Object.entries(value).some(
+		([key, item]) => textIncludesExpected(key, expected) || jsonValueMatchesExpected(item, expected),
+	);
+}
+
+function workerResultSatisfiesExpectedOutput(workerResult: WorkerResult, expectedOutput: string): boolean {
+	return (
+		textIncludesExpected(workerResult.summary, expectedOutput) ||
+		workerResult.producedArtifacts.some((artifact) => artifactMatchesExpected(artifact, expectedOutput)) ||
+		jsonValueMatchesExpected(workerResult.structuredOutputs, expectedOutput)
+	);
+}
+
+function acceptanceIssuesForWorkerResult(workerRequest: WorkerRequest, workerResult: WorkerResult): AcceptanceIssue[] {
+	const issues: AcceptanceIssue[] = [];
+	if (workerResult.status !== "success") {
+		issues.push({
+			code: "worker_failed",
+			message: workerResult.failureReason ?? `Worker returned status ${workerResult.status}.`,
+			severity: "error",
+		});
+	}
+	for (const expectedOutput of workerRequest.expectedOutputs) {
+		if (!workerResultSatisfiesExpectedOutput(workerResult, expectedOutput)) {
+			issues.push({
+				code: "expected_output_missing",
+				message: `Worker result did not satisfy expected output: ${expectedOutput}`,
+				severity: "error",
+			});
+		}
+	}
+	for (const warning of workerResult.warnings) {
+		issues.push({
+			code: "worker_warning",
+			message: warning,
+			severity: "warning",
+		});
+	}
+	for (const question of workerResult.openQuestions) {
+		issues.push({
+			code: "worker_open_question",
+			message: question,
+			severity: "info",
+		});
+	}
+	return issues;
+}
+
+function createLeadAcceptanceReport(workerRequest: WorkerRequest, workerResult: WorkerResult): AcceptanceReport {
+	return createAcceptanceReport(workerResult, acceptanceIssuesForWorkerResult(workerRequest, workerResult));
+}
+
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
@@ -231,7 +415,7 @@ function recordLeadEvent(sessionManager: SessionManager, customType: string, dat
 }
 
 export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): LeadAgentRuntime {
-	const profiles = options.profiles ?? DEFAULT_ACADEMIC_PROFILES;
+	const profiles = options.profiles ?? loadAcademicProfilesFromDir();
 	const workerRunner = options.workerRunner ?? runCodingWorker;
 	const sessionManager = options.sessionManager ?? SessionManager.inMemory(options.cwd ?? process.cwd());
 	return {
@@ -273,16 +457,10 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			let acceptanceReport: AcceptanceReport;
 			try {
 				workerResult = await workerRunner(workerRequest);
-				acceptanceReport = createAcceptanceReport(workerResult);
+				acceptanceReport = createLeadAcceptanceReport(workerRequest, workerResult);
 			} catch (error) {
 				workerResult = createFailedWorkerResult(taskId, sessionId, error);
-				acceptanceReport = createAcceptanceReport(workerResult, [
-					{
-						code: "worker_failed",
-						message: errorMessage(error),
-						severity: "error",
-					},
-				]);
+				acceptanceReport = createLeadAcceptanceReport(workerRequest, workerResult);
 			}
 			const result = synthesizeWorkerResult(taskId, sessionId, decision, workerResult, acceptanceReport);
 			recordLeadEvent(sessionManager, "lead-agent.result", {
@@ -294,3 +472,5 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 		},
 	};
 }
+
+export * from "./academic-smoke.js";
