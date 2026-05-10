@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added structured worker adapter result parsing for artifact refs, warnings, open questions, and structured outputs.
+
 ### Changed
 
 - Changed coding-agent package metadata to depend on `@mariozechner/pi-agent-host` and expose host compatibility aliases.

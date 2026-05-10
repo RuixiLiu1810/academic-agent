@@ -1,5 +1,12 @@
-import type { ExecutionTrace, WorkerRequest, WorkerResult } from "@mariozechner/pi-agent-contracts";
-import { createExecutionTrace } from "@mariozechner/pi-agent-contracts";
+import type {
+	ArtifactRef,
+	ExecutionTrace,
+	JsonObject,
+	JsonValue,
+	WorkerRequest,
+	WorkerResult,
+} from "@mariozechner/pi-agent-contracts";
+import { createExecutionTrace, isArtifactRef } from "@mariozechner/pi-agent-contracts";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
 import type { AgentSession } from "../agent-session.js";
@@ -12,6 +19,15 @@ export interface RunCodingWorkerOptions extends Omit<CreateAgentSessionOptions, 
 	sessionManager?: SessionManager;
 	workerSessionDir?: string;
 	promptPrefix?: string;
+}
+
+interface ParsedWorkerOutput {
+	summary?: string;
+	structuredOutputs?: JsonObject;
+	producedArtifacts: ArtifactRef[];
+	warnings: string[];
+	openQuestions: string[];
+	parseWarning?: string;
 }
 
 function messageText(message: AgentMessage | undefined): string {
@@ -63,6 +79,141 @@ function appendTraceFromMessages(trace: ExecutionTrace, messages: readonly Agent
 	}
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isJsonValue(value: unknown): value is JsonValue {
+	if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+		return true;
+	}
+	if (Array.isArray(value)) {
+		return value.every(isJsonValue);
+	}
+	if (!isRecord(value)) {
+		return false;
+	}
+	return Object.values(value).every(isJsonValue);
+}
+
+function isJsonObject(value: unknown): value is JsonObject {
+	return isRecord(value) && Object.values(value).every(isJsonValue);
+}
+
+function isStringArray(value: unknown): value is string[] {
+	return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function findBalancedJsonObject(text: string): string | undefined {
+	const start = text.indexOf("{");
+	if (start === -1) {
+		return undefined;
+	}
+	let depth = 0;
+	let inString = false;
+	let escaped = false;
+	for (let index = start; index < text.length; index++) {
+		const char = text[index];
+		if (inString) {
+			if (escaped) {
+				escaped = false;
+				continue;
+			}
+			if (char === "\\") {
+				escaped = true;
+				continue;
+			}
+			if (char === '"') {
+				inString = false;
+			}
+			continue;
+		}
+		if (char === '"') {
+			inString = true;
+			continue;
+		}
+		if (char === "{") {
+			depth++;
+			continue;
+		}
+		if (char === "}") {
+			depth--;
+			if (depth === 0) {
+				return text.slice(start, index + 1);
+			}
+		}
+	}
+	return undefined;
+}
+
+function extractWorkerResultJson(text: string): string | undefined {
+	const marker = "WORKER_RESULT_JSON:";
+	const markerIndex = text.indexOf(marker);
+	if (markerIndex !== -1) {
+		return findBalancedJsonObject(text.slice(markerIndex + marker.length));
+	}
+	const fencedJson = /```json\s*([\s\S]*?)```/i.exec(text);
+	if (fencedJson?.[1]) {
+		return findBalancedJsonObject(fencedJson[1]);
+	}
+	return undefined;
+}
+
+function parseWorkerOutput(text: string): ParsedWorkerOutput {
+	const json = extractWorkerResultJson(text);
+	if (!json) {
+		return {
+			producedArtifacts: [],
+			warnings: [],
+			openQuestions: [],
+		};
+	}
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(json);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		return {
+			producedArtifacts: [],
+			warnings: [],
+			openQuestions: [],
+			parseWarning: `Could not parse WORKER_RESULT_JSON: ${message}`,
+		};
+	}
+	if (!isRecord(parsed)) {
+		return {
+			producedArtifacts: [],
+			warnings: [],
+			openQuestions: [],
+			parseWarning: "WORKER_RESULT_JSON must be an object.",
+		};
+	}
+	const producedArtifacts = Array.isArray(parsed.producedArtifacts)
+		? parsed.producedArtifacts.filter(isArtifactRef)
+		: [];
+	return {
+		summary: typeof parsed.summary === "string" ? parsed.summary : undefined,
+		structuredOutputs: isJsonObject(parsed.structuredOutputs) ? parsed.structuredOutputs : undefined,
+		producedArtifacts,
+		warnings: isStringArray(parsed.warnings) ? parsed.warnings : [],
+		openQuestions: isStringArray(parsed.openQuestions) ? parsed.openQuestions : [],
+		parseWarning:
+			Array.isArray(parsed.producedArtifacts) && producedArtifacts.length !== parsed.producedArtifacts.length
+				? "WORKER_RESULT_JSON contained invalid artifact refs."
+				: undefined,
+	};
+}
+
+function mergeStructuredOutputs(base: JsonObject, extra?: JsonObject): JsonObject {
+	if (!extra) {
+		return base;
+	}
+	return {
+		...extra,
+		...base,
+	};
+}
+
 export function buildCodingWorkerPrompt(request: WorkerRequest, promptPrefix?: string): string {
 	const sections = [
 		promptPrefix ?? "Execute this worker task as a concrete coding-agent subtask.",
@@ -89,7 +240,16 @@ export function buildCodingWorkerPrompt(request: WorkerRequest, promptPrefix?: s
 				.join("\n")}`,
 		);
 	}
-	sections.push("Return a concise summary, warnings, open questions, and any artifact paths you produced.");
+	sections.push(`Return a concise human-readable answer, then include this machine-readable block:
+
+WORKER_RESULT_JSON:
+{
+  "summary": "Concise result summary",
+  "structuredOutputs": {},
+  "producedArtifacts": [],
+  "warnings": [],
+  "openQuestions": []
+}`);
 	return sections.join("\n\n");
 }
 
@@ -129,11 +289,16 @@ export async function runCodingWorker(
 		appendTraceFromMessages(trace, session.messages);
 		const assistant = lastAssistant(session.messages);
 		const assistantSummary = messageText(assistant);
+		const parsedOutput = parseWorkerOutput(assistantSummary);
+		const resultSummary = parsedOutput.summary ?? assistantSummary;
+		const warnings = parsedOutput.parseWarning
+			? [...parsedOutput.warnings, parsedOutput.parseWarning]
+			: parsedOutput.warnings;
 		trace.endedAt = new Date().toISOString();
 		trace.events.push({
 			type: "worker_end",
 			timestamp: trace.endedAt,
-			message: assistantSummary,
+			message: resultSummary,
 		});
 
 		if (!assistant) {
@@ -164,14 +329,18 @@ export async function runCodingWorker(
 		return {
 			taskId: request.taskId,
 			status: "success",
-			summary: assistantSummary,
-			structuredOutputs: {
-				text: assistantSummary,
-				sessionId: session.sessionId,
-			},
-			producedArtifacts: [],
-			warnings: [],
-			openQuestions: [],
+			summary: resultSummary,
+			structuredOutputs: mergeStructuredOutputs(
+				{
+					text: resultSummary,
+					rawAssistantText: assistantSummary,
+					sessionId: session.sessionId,
+				},
+				parsedOutput.structuredOutputs,
+			),
+			producedArtifacts: parsedOutput.producedArtifacts,
+			warnings,
+			openQuestions: parsedOutput.openQuestions,
 			executionTrace: trace,
 		};
 	} catch (error) {
@@ -186,8 +355,12 @@ export async function runCodingWorker(
 			taskId: request.taskId,
 			status: "failed",
 			summary: message,
+			structuredOutputs: {
+				error: message,
+				sessionId: trace.sessionId ?? null,
+			},
 			producedArtifacts: [],
-			warnings: [],
+			warnings: [message],
 			openQuestions: [],
 			executionTrace: trace,
 			failureReason: message,

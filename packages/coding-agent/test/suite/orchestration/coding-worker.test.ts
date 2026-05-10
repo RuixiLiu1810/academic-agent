@@ -15,7 +15,27 @@ describe("coding worker adapter", () => {
 	it("turns a WorkerRequest into a structured WorkerResult", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
-		harness.setResponses([fauxAssistantMessage("Worker completed the evidence pass.")]);
+		harness.setResponses([
+			fauxAssistantMessage(`Worker completed the evidence pass.
+
+WORKER_RESULT_JSON:
+{
+  "summary": "Worker completed the evidence pass.",
+  "structuredOutputs": {
+    "evidenceCount": 3
+  },
+  "producedArtifacts": [
+    {
+      "id": "artifact-1",
+      "kind": "evidence-table",
+      "uri": "memory://artifact-1",
+      "title": "Evidence table"
+    }
+  ],
+  "warnings": ["One source needs manual citation review."],
+  "openQuestions": ["Should the lead agent revise the background section?"]
+}`),
+		]);
 
 		const result = await runCodingWorker(
 			{
@@ -35,6 +55,17 @@ describe("coding worker adapter", () => {
 			status: "success",
 			summary: "Worker completed the evidence pass.",
 		});
+		expect(result.producedArtifacts).toEqual([
+			{
+				id: "artifact-1",
+				kind: "evidence-table",
+				uri: "memory://artifact-1",
+				title: "Evidence table",
+			},
+		]);
+		expect(result.warnings).toEqual(["One source needs manual citation review."]);
+		expect(result.openQuestions).toEqual(["Should the lead agent revise the background section?"]);
+		expect(result.structuredOutputs?.evidenceCount).toBe(3);
 		expect(result.structuredOutputs?.sessionId).toBe(harness.session.sessionId);
 	});
 
@@ -52,5 +83,6 @@ describe("coding worker adapter", () => {
 		expect(prompt).toContain("Use manuscript only");
 		expect(prompt).toContain("claim audit");
 		expect(prompt).toContain("no unsupported claims");
+		expect(prompt).toContain("WORKER_RESULT_JSON");
 	});
 });
