@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createExecutionTrace } from "@mariozechner/pi-agent-contracts";
@@ -118,5 +118,6 @@ describe("runLeadAgentCli", () => {
 		expect(exitCode).toBe(0);
 		expect(stdout.join("")).toContain(`- Artifact manifest: ${join(artifactDir, "artifacts.json")}`);
 		expect(stdout.join("")).toContain("- Decision: worker/reviewer");
+		expect(readdirSync(sessionDir).some((filename) => filename.endsWith(".jsonl"))).toBe(true);
 	});
 });

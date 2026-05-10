@@ -150,7 +150,12 @@ Use the custom audit role.
 
 		expect(runtime.sessionManager).toBe(sessionManager);
 		expect(sessionManager.getCwd()).toBe("/tmp/lead-agent-test");
-		expect(sessionManager.getEntries().map((entry) => entry.type)).toEqual(["message", "custom", "custom"]);
+		expect(sessionManager.getEntries().map((entry) => entry.type)).toEqual([
+			"message",
+			"custom",
+			"message",
+			"custom",
+		]);
 	});
 
 	it("turns worker failures into rejected acceptance reports", async () => {

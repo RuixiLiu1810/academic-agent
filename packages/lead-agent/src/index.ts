@@ -475,6 +475,32 @@ function recordLeadEvent(sessionManager: SessionManager, customType: string, dat
 	sessionManager.appendCustomEntry(customType, data);
 }
 
+function recordLeadAssistantMessage(sessionManager: SessionManager, finalOutput: string): void {
+	sessionManager.appendMessage({
+		role: "assistant",
+		content: [{ type: "text", text: finalOutput }],
+		api: "lead-agent",
+		provider: "lead-agent",
+		model: "lead-agent-synthesis",
+		usage: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			totalTokens: 0,
+			cost: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				total: 0,
+			},
+		},
+		stopReason: "stop",
+		timestamp: Date.now(),
+	});
+}
+
 export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): LeadAgentRuntime {
 	const profiles = options.profiles ?? loadAcademicProfilesFromDir();
 	const workerRunner = options.workerRunner ?? runCodingWorker;
@@ -501,6 +527,7 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			});
 			if (decision.mode === "direct") {
 				const result = synthesizeDirect(taskId, sessionId, request, decision);
+				recordLeadAssistantMessage(sessionManager, result.finalOutput);
 				recordLeadEvent(sessionManager, "lead-agent.result", {
 					taskId,
 					finalOutput: result.finalOutput,
@@ -524,6 +551,7 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 				acceptanceReport = createLeadAcceptanceReport(workerRequest, workerResult);
 			}
 			const result = synthesizeWorkerResult(taskId, sessionId, decision, workerResult, acceptanceReport);
+			recordLeadAssistantMessage(sessionManager, result.finalOutput);
 			recordLeadEvent(sessionManager, "lead-agent.result", {
 				taskId,
 				finalOutput: result.finalOutput,
