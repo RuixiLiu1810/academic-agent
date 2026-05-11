@@ -20,4 +20,12 @@ describe("lead TUI smoke", () => {
 			expectedOutputs: [],
 		});
 	});
+
+	it("DEFAULT_LEAD_TUI_KEYBINDINGS has required actions", () => {
+		const kb = DEFAULT_LEAD_TUI_KEYBINDINGS;
+		expect(kb.submit).toBeDefined();
+		expect(kb.cancel).toBeDefined();
+		expect(kb.exit).toBeDefined();
+		expect(kb.help).toBeDefined();
+	});
 });

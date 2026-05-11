@@ -1,4 +1,16 @@
-import { type Component, Container, Editor, Loader, ProcessTerminal, Spacer, Text, TUI } from "@mariozechner/pi-tui";
+import {
+	type Component,
+	Container,
+	Editor,
+	KeybindingsManager,
+	Loader,
+	ProcessTerminal,
+	Spacer,
+	setKeybindings,
+	Text,
+	TUI,
+	TUI_KEYBINDINGS,
+} from "@mariozechner/pi-tui";
 import type { LeadAgentRunView } from "../../cli/output.js";
 import { createLeadAgentRunView } from "../../cli/output.js";
 import type { AcademicTaskType, LeadAgentRuntime } from "../../index.js";
@@ -107,6 +119,7 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 	});
 
 	const tui = new TUI(new ProcessTerminal());
+	setKeybindings(new KeybindingsManager(TUI_KEYBINDINGS));
 
 	// Chat history
 	const chatContainer = new Container();
