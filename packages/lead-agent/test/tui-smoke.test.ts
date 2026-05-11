@@ -15,6 +15,9 @@ describe("lead TUI smoke", () => {
 			status: "ready",
 			keybindings: DEFAULT_LEAD_TUI_KEYBINDINGS,
 			lastRun: undefined,
+			taskType: undefined,
+			profileId: undefined,
+			expectedOutputs: [],
 		});
 	});
 });
