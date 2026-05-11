@@ -249,13 +249,31 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 			resolve(exitCode);
 		};
 
-		const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
+		const signals: NodeJS.Signals[] = ["SIGTERM"];
 		if (process.platform !== "win32") signals.push("SIGHUP");
 
+		// SIGTERM and SIGHUP: immediate clean shutdown
 		for (const signal of signals) {
-			const handler = () => finish(signal === "SIGINT" ? 130 : 0);
+			const handler = () => finish(0);
 			process.once(signal, handler);
 			cleanupHandlers.push(() => process.off(signal, handler));
 		}
+
+		// SIGINT (ctrl+c): first press clears editor, second press within 500ms exits
+		let lastSigintTime = 0;
+		const sigintHandler = () => {
+			const now = Date.now();
+			if (now - lastSigintTime < 500) {
+				finish(130);
+				return;
+			}
+			lastSigintTime = now;
+			if (state.status !== "running") {
+				editor.setText("");
+				tui.requestRender();
+			}
+		};
+		process.on("SIGINT", sigintHandler);
+		cleanupHandlers.push(() => process.off("SIGINT", sigintHandler));
 	});
 }
