@@ -41,6 +41,28 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 	root.addChild(new Text(options.initialPrompt ?? "Ready"));
 	tui.addChild(root);
 	tui.start();
-	tui.stop();
-	return 0;
+	return new Promise((resolve) => {
+		let settled = false;
+		const cleanupHandlers: Array<() => void> = [];
+		const finish = (exitCode: number) => {
+			if (settled) {
+				return;
+			}
+			settled = true;
+			for (const cleanup of cleanupHandlers) {
+				cleanup();
+			}
+			tui.stop();
+			resolve(exitCode);
+		};
+		const signals: NodeJS.Signals[] = ["SIGINT", "SIGTERM"];
+		if (process.platform !== "win32") {
+			signals.push("SIGHUP");
+		}
+		for (const signal of signals) {
+			const handler = () => finish(signal === "SIGINT" ? 130 : 0);
+			process.once(signal, handler);
+			cleanupHandlers.push(() => process.off(signal, handler));
+		}
+	});
 }
