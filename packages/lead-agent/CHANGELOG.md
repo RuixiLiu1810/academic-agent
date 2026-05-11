@@ -10,3 +10,4 @@
 - Added a source CLI used by the repository-level `lead-agent-test.sh` runner.
 - Added an academic workflow smoke suite and root runner with realistic manuscript, methods, evidence, reviewer, and PaperOrchestra-style fixtures.
 - Added a formal source CLI with task type, profile, artifact directory, session directory, and JSON/Markdown output options.
+- Added the planned `pi-lead` package binary entry for the lead-agent CLI.

@@ -43,6 +43,16 @@ The CLI supports `--task-type auto|writing|research|review|revision|methods|cita
 
 `--artifact-dir` writes `final-output.md`, `lead-result.json`, `acceptance-report.json` when available, and `artifacts.json`.
 
+## Binary
+
+The planned package binary is `pi-lead`. During source development, use:
+
+```bash
+./lead-agent-test.sh --help
+```
+
+After package build/publish, the binary entry resolves to `dist/cli.js`.
+
 ## Academic Workflow Smoke
 
 The repo-level `academic-smoke-test.sh` runner validates a lightweight academic workflow using realistic manuscript, reviewer, methods, evidence, and PaperOrchestra-style pre-writing fixtures.
