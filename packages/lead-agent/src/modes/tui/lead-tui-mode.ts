@@ -13,6 +13,7 @@ import type { LeadAgentRunView } from "../../cli/output.js";
 import { createLeadAgentRunView } from "../../cli/output.js";
 import type { AcademicTaskType, LeadAgentRuntime } from "../../index.js";
 import { FooterComponent } from "./components/footer.js";
+import { createHeaderComponent } from "./components/header.js";
 import { ErrorComponent, RunResultComponent, UserQueryComponent } from "./components/messages.js";
 import { DEFAULT_LEAD_TUI_KEYBINDINGS, type LeadTuiAction } from "./keybindings.js";
 import { createLeadEditorTheme, createLeadMarkdownTheme, createLeadTuiTheme, type LeadTuiTheme } from "./theme.js";
@@ -167,7 +168,8 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 	const footer = new FooterComponent(theme, state);
 
 	// Layout
-	tui.addChild(new Text(theme.accent("Lead Agent"), 1, 1));
+	const header = createHeaderComponent(theme);
+	tui.addChild(header);
 	tui.addChild(chatContainer);
 	tui.addChild(loaderContainer);
 	tui.addChild(editorContainer);
@@ -239,6 +241,16 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 	return new Promise<number>((resolve) => {
 		let settled = false;
 		const cleanupHandlers: Array<() => void> = [];
+
+		const removeInputListener = tui.addInputListener((data) => {
+			if (data === "\x05") {
+				// ctrl+e
+				header.toggle();
+				tui.requestRender();
+				return { consume: true };
+			}
+		});
+		cleanupHandlers.push(removeInputListener);
 
 		const finish = (exitCode: number) => {
 			if (settled) return;
