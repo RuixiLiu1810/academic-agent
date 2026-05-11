@@ -97,7 +97,7 @@ function handleTuiSlashCommand(
 			if (value.length > 0) {
 				state.expectedOutputs = [value];
 			}
-			footer.setText(theme.dim(`expected-output: ${state.expectedOutputs.join(", ") || "none"}`));
+			footer.sync(state);
 			break;
 		case "session": {
 			const lines = [
@@ -117,6 +117,7 @@ function handleTuiSlashCommand(
 				`cancel:  ${kb.cancel}`,
 				`exit:    ${kb.exit}`,
 				`help:    ${kb.help}`,
+				`expand:  ${kb.expand}`,
 			].join("\n");
 			chatContainer.addChild(new Text(theme.dim(lines), 1, 0));
 			break;
@@ -136,6 +137,14 @@ function handleTuiSlashCommand(
 		default:
 			footer.setText(theme.error(`unknown command: /${cmd ?? ""} — type /help for commands`));
 	}
+}
+
+function bindingToSequence(binding: string): string | undefined {
+	const ctrlMatch = /^ctrl\+([a-z])$/i.exec(binding);
+	if (ctrlMatch) {
+		return String.fromCharCode(ctrlMatch[1]!.toLowerCase().charCodeAt(0) - 96);
+	}
+	return undefined;
 }
 
 export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<number> {
@@ -168,7 +177,7 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 	const footer = new FooterComponent(theme, state);
 
 	// Layout
-	const header = createHeaderComponent(theme);
+	const header = createHeaderComponent(theme, state.keybindings.expand);
 	tui.addChild(header);
 	tui.addChild(chatContainer);
 	tui.addChild(loaderContainer);
@@ -242,9 +251,9 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 		let settled = false;
 		const cleanupHandlers: Array<() => void> = [];
 
+		const expandSeq = bindingToSequence(state.keybindings.expand);
 		const removeInputListener = tui.addInputListener((data) => {
-			if (data === "\x05") {
-				// ctrl+e
+			if (expandSeq !== undefined && data === expandSeq) {
 				header.toggle();
 				tui.requestRender();
 				return { consume: true };
