@@ -1,8 +1,8 @@
 import {
+	CancellableLoader,
 	Container,
 	Editor,
 	KeybindingsManager,
-	Loader,
 	ProcessTerminal,
 	setKeybindings,
 	Text,
@@ -199,7 +199,10 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 		chatContainer.addChild(new UserQueryComponent(text, theme, markdownTheme));
 
 		// Show spinner
-		const loader = new Loader(tui, theme.accent, theme.dim, "Running…");
+		const loader = new CancellableLoader(tui, theme.accent, theme.dim, "Running… (escape to interrupt)");
+		loader.onAbort = () => {
+			options.runtime.abort();
+		};
 		loaderContainer.addChild(loader);
 		tui.requestRender();
 
@@ -219,8 +222,12 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 		} catch (err) {
 			loader.stop();
 			loaderContainer.clear();
-			const message = err instanceof Error ? err.message : String(err);
-			chatContainer.addChild(new ErrorComponent(message, theme));
+			if (err instanceof Error && err.name === "AbortError") {
+				// User cancelled — no error card
+			} else {
+				const message = err instanceof Error ? err.message : String(err);
+				chatContainer.addChild(new ErrorComponent(message, theme));
+			}
 		} finally {
 			state.status = "ready";
 			editor.disableSubmit = false;
