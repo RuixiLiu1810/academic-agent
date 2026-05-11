@@ -21,7 +21,7 @@ export class UserQueryComponent extends Container {
 export class RunResultComponent extends Container {
 	constructor(view: LeadAgentRunView, theme: LeadTuiTheme, markdownTheme: MarkdownTheme) {
 		super();
-		const modeLabel = theme.agentLabel("Agent") + "  " + theme.dim(view.decision);
+		const modeLabel = `${theme.agentLabel("Agent")}  ${theme.dim(view.decision)}`;
 
 		this.addChild(new Spacer(1));
 		this.addChild(new Text(modeLabel, 1, 0));
