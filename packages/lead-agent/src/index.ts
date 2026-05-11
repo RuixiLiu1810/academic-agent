@@ -60,6 +60,7 @@ export interface LeadAgentRuntimeOptions {
 
 export interface LeadAgentRuntime {
 	run(request: LeadAgentTaskRequest): Promise<LeadAgentResult>;
+	abort(): void;
 	plan(request: LeadAgentTaskRequest): LeadAgentDecision;
 	profiles: readonly WorkerProfile[];
 	sessionManager: SessionManager;
@@ -559,59 +560,77 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 	const workerRunner = options.workerRunner ?? runCodingWorker;
 	const directRunner = options.directRunner ?? createDefaultDirectRunner(options.cwd ?? process.cwd());
 	const sessionManager = options.sessionManager ?? SessionManager.inMemory(options.cwd ?? process.cwd());
-	return {
-		profiles,
-		sessionManager,
-		plan: (request) => planLeadAgentTask(request, profiles),
-		run: async (request) => {
-			const taskId = request.taskId ?? `lead-task-${Date.now()}`;
-			const sessionId = sessionManager.getSessionId();
-			sessionManager.appendMessage({
-				role: "user",
-				content: [{ type: "text", text: request.objective }],
-				timestamp: Date.now(),
-			});
-			const decision = planLeadAgentTask(request, profiles);
-			recordLeadEvent(sessionManager, "lead-agent.decision", {
-				taskId,
-				mode: decision.mode,
-				workerType: decision.workerType ?? null,
-				profileId: decision.profileId ?? null,
-				reason: decision.reason,
-			});
-			if (decision.mode === "direct") {
-				const result = await synthesizeDirect(taskId, sessionId, request, decision, directRunner);
-				recordLeadAssistantMessage(sessionManager, result.finalOutput);
-				recordLeadEvent(sessionManager, "lead-agent.result", {
-					taskId,
-					finalOutput: result.finalOutput,
-					accepted: true,
-				});
-				return result;
-			}
-			const workerRequest = toWorkerRequest(taskId, request, decision, profiles);
-			recordLeadEvent(sessionManager, "lead-agent.worker_request", {
-				taskId,
-				workerType: workerRequest.workerType,
-				expectedOutputs: workerRequest.expectedOutputs,
-			});
-			let workerResult: WorkerResult;
-			let acceptanceReport: AcceptanceReport;
-			try {
-				workerResult = await workerRunner(workerRequest);
-				acceptanceReport = createLeadAcceptanceReport(workerRequest, workerResult);
-			} catch (error) {
-				workerResult = createFailedWorkerResult(taskId, sessionId, error);
-				acceptanceReport = createLeadAcceptanceReport(workerRequest, workerResult);
-			}
-			const result = synthesizeWorkerResult(taskId, sessionId, decision, workerResult, acceptanceReport);
+
+	let abortController = new AbortController();
+
+	async function runImpl(request: LeadAgentTaskRequest): Promise<LeadAgentResult> {
+		const taskId = request.taskId ?? `lead-task-${Date.now()}`;
+		const sessionId = sessionManager.getSessionId();
+		sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: request.objective }],
+			timestamp: Date.now(),
+		});
+		const decision = planLeadAgentTask(request, profiles);
+		recordLeadEvent(sessionManager, "lead-agent.decision", {
+			taskId,
+			mode: decision.mode,
+			workerType: decision.workerType ?? null,
+			profileId: decision.profileId ?? null,
+			reason: decision.reason,
+		});
+		if (decision.mode === "direct") {
+			const result = await synthesizeDirect(taskId, sessionId, request, decision, directRunner);
 			recordLeadAssistantMessage(sessionManager, result.finalOutput);
 			recordLeadEvent(sessionManager, "lead-agent.result", {
 				taskId,
 				finalOutput: result.finalOutput,
-				accepted: acceptanceReport.accepted,
+				accepted: true,
 			});
 			return result;
+		}
+		const workerRequest = toWorkerRequest(taskId, request, decision, profiles);
+		recordLeadEvent(sessionManager, "lead-agent.worker_request", {
+			taskId,
+			workerType: workerRequest.workerType,
+			expectedOutputs: workerRequest.expectedOutputs,
+		});
+		let workerResult: WorkerResult;
+		let acceptanceReport: AcceptanceReport;
+		try {
+			workerResult = await workerRunner(workerRequest);
+			acceptanceReport = createLeadAcceptanceReport(workerRequest, workerResult);
+		} catch (error) {
+			workerResult = createFailedWorkerResult(taskId, sessionId, error);
+			acceptanceReport = createLeadAcceptanceReport(workerRequest, workerResult);
+		}
+		const result = synthesizeWorkerResult(taskId, sessionId, decision, workerResult, acceptanceReport);
+		recordLeadAssistantMessage(sessionManager, result.finalOutput);
+		recordLeadEvent(sessionManager, "lead-agent.result", {
+			taskId,
+			finalOutput: result.finalOutput,
+			accepted: acceptanceReport.accepted,
+		});
+		return result;
+	}
+
+	return {
+		profiles,
+		sessionManager,
+		plan: (request) => planLeadAgentTask(request, profiles),
+		abort() {
+			abortController.abort();
+		},
+		async run(request) {
+			abortController = new AbortController();
+			const abortPromise = new Promise<never>((_, reject) => {
+				abortController.signal.addEventListener("abort", () => {
+					const err = new Error("Run aborted by user");
+					err.name = "AbortError";
+					reject(err);
+				});
+			});
+			return Promise.race([runImpl(request), abortPromise]);
 		},
 	};
 }
