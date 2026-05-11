@@ -1,11 +1,9 @@
 import {
-	type Component,
 	Container,
 	Editor,
 	KeybindingsManager,
 	Loader,
 	ProcessTerminal,
-	Spacer,
 	setKeybindings,
 	Text,
 	TUI,
@@ -14,7 +12,7 @@ import {
 import type { LeadAgentRunView } from "../../cli/output.js";
 import { createLeadAgentRunView } from "../../cli/output.js";
 import type { AcademicTaskType, LeadAgentRuntime } from "../../index.js";
-import { RunResultComponent, UserQueryComponent } from "./components/messages.js";
+import { ErrorComponent, RunResultComponent, UserQueryComponent } from "./components/messages.js";
 import { DEFAULT_LEAD_TUI_KEYBINDINGS, type LeadTuiAction } from "./keybindings.js";
 import { createLeadEditorTheme, createLeadMarkdownTheme, createLeadTuiTheme, type LeadTuiTheme } from "./theme.js";
 
@@ -32,6 +30,7 @@ export interface LeadTuiState {
 	taskType?: AcademicTaskType;
 	profileId?: string;
 	expectedOutputs: string[];
+	runCount: number;
 }
 
 export function createLeadTuiInitialState(options: LeadTuiInitialStateOptions): LeadTuiState {
@@ -44,6 +43,7 @@ export function createLeadTuiInitialState(options: LeadTuiInitialStateOptions): 
 		taskType: undefined,
 		profileId: undefined,
 		expectedOutputs: [],
+		runCount: 0,
 	};
 }
 
@@ -66,14 +66,13 @@ function parseTuiAcademicTaskType(value: string): AcademicTaskType | undefined {
 	return undefined;
 }
 
-function makeBorder(theme: LeadTuiTheme): Component {
-	return {
-		render: (width: number) => [theme.border("─".repeat(Math.max(1, width)))],
-		invalidate: () => {},
-	};
-}
-
-function handleTuiSlashCommand(text: string, state: LeadTuiState, footer: Text, theme: LeadTuiTheme): void {
+function handleTuiSlashCommand(
+	text: string,
+	state: LeadTuiState,
+	footer: Text,
+	theme: LeadTuiTheme,
+	chatContainer: Container,
+): void {
 	const [cmd, ...parts] = text.slice(1).trim().split(/\s+/);
 	const value = parts.join(" ").trim();
 
@@ -98,11 +97,41 @@ function handleTuiSlashCommand(text: string, state: LeadTuiState, footer: Text, 
 			}
 			footer.setText(theme.dim(`expected-output: ${state.expectedOutputs.join(", ") || "none"}`));
 			break;
-		case "session":
-			footer.setText(theme.dim(`session: ${state.sessionId}`));
+		case "session": {
+			const lines = [
+				`session:          ${state.sessionId}`,
+				`runs:             ${state.runCount}`,
+				`task-type:        ${state.taskType ?? "(not set)"}`,
+				`profile:          ${state.profileId ?? "(auto)"}`,
+				`expected-outputs: ${state.expectedOutputs.length > 0 ? state.expectedOutputs.join(", ") : "(none)"}`,
+			].join("\n");
+			chatContainer.addChild(new Text(theme.dim(lines), 1, 0));
+			break;
+		}
+		case "hotkeys": {
+			const kb = state.keybindings;
+			const lines = [
+				`submit:  ${kb.submit}`,
+				`cancel:  ${kb.cancel}`,
+				`exit:    ${kb.exit}`,
+				`help:    ${kb.help}`,
+			].join("\n");
+			chatContainer.addChild(new Text(theme.dim(lines), 1, 0));
+			break;
+		}
+		case "new":
+			chatContainer.clear();
+			state.taskType = undefined;
+			state.profileId = undefined;
+			state.expectedOutputs = [];
+			state.lastRun = undefined;
+			state.runCount = 0;
+			footer.setText(
+				theme.dim(`session ${state.sessionId} · enter to submit · /help for commands · ctrl+c to exit`),
+			);
 			break;
 		case "help":
-			footer.setText(theme.dim("/task-type · /profile · /expected-output · /session · /help"));
+			footer.setText(theme.dim("/task-type · /profile · /expected-output · /session · /hotkeys · /new · /help"));
 			break;
 		default:
 			footer.setText(theme.error(`unknown command: /${cmd ?? ""} — type /help for commands`));
@@ -133,7 +162,6 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 		editor.setText(options.initialPrompt);
 	}
 	const editorContainer = new Container();
-	editorContainer.addChild(makeBorder(theme));
 	editorContainer.addChild(editor);
 
 	// Footer status bar
@@ -155,7 +183,7 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 
 		// Slash commands
 		if (text.startsWith("/")) {
-			handleTuiSlashCommand(text, state, footer, theme);
+			handleTuiSlashCommand(text, state, footer, theme, chatContainer);
 			editor.setText("");
 			tui.requestRender();
 			return;
@@ -184,6 +212,7 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 			});
 			const view = createLeadAgentRunView(result);
 			state.lastRun = view;
+			state.runCount++;
 			loader.stop();
 			loaderContainer.clear();
 			chatContainer.addChild(new RunResultComponent(view, theme, markdownTheme));
@@ -191,8 +220,7 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 			loader.stop();
 			loaderContainer.clear();
 			const message = err instanceof Error ? err.message : String(err);
-			chatContainer.addChild(new Spacer(1));
-			chatContainer.addChild(new Text(theme.error(message), 1, 0));
+			chatContainer.addChild(new ErrorComponent(message, theme));
 		} finally {
 			state.status = "ready";
 			editor.disableSubmit = false;

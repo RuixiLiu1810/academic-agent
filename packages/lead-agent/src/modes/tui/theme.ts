@@ -11,6 +11,7 @@ export interface LeadTuiTheme {
 	error: (s: string) => string;
 	success: (s: string) => string;
 	userLabel: (s: string) => string;
+	agentLabel: (s: string) => string;
 }
 
 export function createLeadTuiTheme(): LeadTuiTheme {
@@ -22,6 +23,7 @@ export function createLeadTuiTheme(): LeadTuiTheme {
 		error: (s) => chalk.red(s),
 		success: (s) => chalk.green(s),
 		userLabel: (s) => chalk.bold.blue(s),
+		agentLabel: (s) => chalk.bold.green(s),
 	};
 }
 

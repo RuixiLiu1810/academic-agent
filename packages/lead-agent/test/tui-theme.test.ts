@@ -10,8 +10,10 @@ describe("createLeadTuiTheme", () => {
 		expect(typeof theme.error).toBe("function");
 		expect(typeof theme.muted).toBe("function");
 		expect(typeof theme.userLabel).toBe("function");
+		expect(typeof theme.agentLabel).toBe("function");
 		expect(typeof theme.border("x")).toBe("string");
 		expect(typeof theme.accent("x")).toBe("string");
+		expect(typeof theme.agentLabel("x")).toBe("string");
 	});
 });
 

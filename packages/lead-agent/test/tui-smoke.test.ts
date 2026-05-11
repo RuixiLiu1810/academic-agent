@@ -18,6 +18,7 @@ describe("lead TUI smoke", () => {
 			taskType: undefined,
 			profileId: undefined,
 			expectedOutputs: [],
+			runCount: 0,
 		});
 	});
 

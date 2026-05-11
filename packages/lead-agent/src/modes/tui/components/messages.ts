@@ -16,21 +16,31 @@ export class UserQueryComponent extends Container {
 }
 
 /**
- * Displays a completed run result (output + run metadata + any issues).
+ * Displays a completed run result (output + decision mode as agent label).
  */
 export class RunResultComponent extends Container {
 	constructor(view: LeadAgentRunView, theme: LeadTuiTheme, markdownTheme: MarkdownTheme) {
 		super();
-		const acceptedStr = view.accepted === undefined ? "direct" : view.accepted ? "accepted" : "rejected";
-		const statusLine = `${theme.dim(view.decision)} · ${theme.dim(acceptedStr)}`;
+		const modeLabel = theme.agentLabel("Agent") + "  " + theme.dim(view.decision);
 
 		this.addChild(new Spacer(1));
+		this.addChild(new Text(modeLabel, 1, 0));
 		this.addChild(new Markdown(view.finalOutput, 1, 0, markdownTheme));
-		this.addChild(new Spacer(1));
-		this.addChild(new Text(statusLine, 1, 0));
 
 		for (const issue of view.issues) {
 			this.addChild(new Text(theme.error(`${issue.severity}: ${issue.code}: ${issue.message}`), 1, 0));
 		}
+	}
+}
+
+/**
+ * Displays an error message as a labelled chat entry.
+ */
+export class ErrorComponent extends Container {
+	constructor(message: string, theme: LeadTuiTheme) {
+		super();
+		this.addChild(new Spacer(1));
+		this.addChild(new Text(theme.error("Error"), 1, 0));
+		this.addChild(new Text(theme.error(message), 1, 0));
 	}
 }

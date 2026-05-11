@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LeadAgentRunView } from "../src/cli/output.js";
-import { RunResultComponent, UserQueryComponent } from "../src/modes/tui/components/messages.js";
+import { ErrorComponent, RunResultComponent, UserQueryComponent } from "../src/modes/tui/components/messages.js";
 import { createLeadMarkdownTheme, createLeadTuiTheme } from "../src/modes/tui/theme.js";
 
 function makeView(overrides: Partial<LeadAgentRunView> = {}): LeadAgentRunView {
@@ -45,6 +45,15 @@ describe("RunResultComponent", () => {
 		expect(text).toContain("All citations validated.");
 	});
 
+	it("render includes agent label and decision mode", () => {
+		const theme = createLeadTuiTheme();
+		const markdownTheme = createLeadMarkdownTheme();
+		const comp = new RunResultComponent(makeView(), theme, markdownTheme);
+		const text = comp.render(80).join("\n");
+		expect(text).toContain("Agent");
+		expect(text).toContain("worker/reviewer");
+	});
+
 	it("render includes issue message when issues present", () => {
 		const theme = createLeadTuiTheme();
 		const markdownTheme = createLeadMarkdownTheme();
@@ -66,5 +75,15 @@ describe("RunResultComponent", () => {
 		const comp = new RunResultComponent(makeView({ accepted: undefined }), theme, markdownTheme);
 		const lines = comp.render(80);
 		expect(lines.length).toBeGreaterThan(0);
+	});
+});
+
+describe("ErrorComponent", () => {
+	it("render includes error message and Error label", () => {
+		const theme = createLeadTuiTheme();
+		const comp = new ErrorComponent("something went wrong", theme);
+		const text = comp.render(80).join("\n");
+		expect(text).toContain("Error");
+		expect(text).toContain("something went wrong");
 	});
 });
