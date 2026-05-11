@@ -7,6 +7,7 @@ import {
 	type LeadAgentWorkerRunner,
 	loadAcademicProfilesFromDir,
 } from "../index.js";
+import { runLeadInteractiveLoop } from "../modes/interactive-loop.js";
 import { type LeadCliArgs, leadCliHelp, parseLeadCliArgs } from "./args.js";
 import { persistLeadCliArtifacts } from "./artifacts.js";
 import { fileInputsToMetadata, type LeadCliFileInput, readLeadCliFileInputs } from "./file-input.js";
@@ -33,6 +34,13 @@ function readObjective(objectiveParts: string[], stdin: string | undefined): str
 		return objective;
 	}
 	return (stdin ?? readProcessStdin()).trim();
+}
+
+function stdinLines(stdin: string | undefined): string[] | undefined {
+	return stdin
+		?.split(/\r?\n/)
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0);
 }
 
 function toTaskType(value: string | undefined): AcademicTaskType | undefined {
@@ -97,11 +105,6 @@ export async function runLeadAgentCli(argv: string[], io: LeadAgentCliIo = {}): 
 		}
 		return 1;
 	}
-	const objective = readObjective(args.objectiveParts, io.stdin);
-	if (objective.length === 0) {
-		stderr(`${leadCliHelp()}\n`);
-		return 1;
-	}
 	const cwd = args.cwd ?? process.cwd();
 	const profiles = args.profileDir ? loadAcademicProfilesFromDir(args.profileDir) : undefined;
 	const sessionManager = await createLeadCliSessionManager({
@@ -119,6 +122,32 @@ export async function runLeadAgentCli(argv: string[], io: LeadAgentCliIo = {}): 
 		sessionManager,
 		workerRunner: io.workerRunner,
 	});
+	if (args.appMode === "interactive") {
+		return runLeadInteractiveLoop({
+			runtime,
+			inputs: stdinLines(io.stdin),
+			stdout,
+			stderr,
+			defaultTaskType: toTaskType(args.taskType),
+			defaultProfileId: args.profileId,
+			defaultExpectedOutputs: args.expectedOutputs,
+		});
+	}
+	const objective = readObjective(args.objectiveParts, io.stdin);
+	if (objective.length === 0) {
+		if (process.stdin.isTTY) {
+			return runLeadInteractiveLoop({
+				runtime,
+				stdout,
+				stderr,
+				defaultTaskType: toTaskType(args.taskType),
+				defaultProfileId: args.profileId,
+				defaultExpectedOutputs: args.expectedOutputs,
+			});
+		}
+		stderr(`${leadCliHelp()}\n`);
+		return 1;
+	}
 	const fileInputs = readLeadCliFileInputs(cwd, args.fileArgs);
 	const result = await runtime.run(createTaskRequest(objective, args, fileInputs));
 	const persisted = args.artifactDir ? persistLeadCliArtifacts(result, args.artifactDir) : undefined;

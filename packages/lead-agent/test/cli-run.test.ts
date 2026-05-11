@@ -164,4 +164,21 @@ describe("runLeadAgentCli", () => {
 			],
 		});
 	});
+
+	it("runs piped interactive mode commands", async () => {
+		const stdout: string[] = [];
+
+		const exitCode = await runLeadAgentCli(["--mode", "interactive"], {
+			stdin: "/task-type review\n/expected-output review memo\nReview this excerpt.\n/exit\n",
+			stdout: (text) => stdout.push(text),
+			stderr: () => {},
+			workerRunner: createWorkerRunner(),
+		});
+
+		expect(exitCode).toBe(0);
+		expect(stdout.join("")).toContain("task-type: review");
+		expect(stdout.join("")).toContain("expected-output: review memo");
+		expect(stdout.join("")).toContain("review memo completed by reviewer");
+		expect(stdout.join("")).toContain("bye");
+	});
 });
