@@ -26,7 +26,8 @@
 		"@mariozechner/pi-agent-host": "^0.73.0",
 		"@mariozechner/pi-artifact-core": "^0.73.0",
 		"@mariozechner/pi-coding-agent": "^0.73.0",
-		"@mariozechner/pi-tui": "^0.73.0"
+		"@mariozechner/pi-tui": "^0.73.0",
+		"chalk": "^5.5.0"
 	},
 	"devDependencies": {
 		"@types/node": "^24.3.0",
