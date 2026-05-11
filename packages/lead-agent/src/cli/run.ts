@@ -9,6 +9,7 @@ import {
 } from "../index.js";
 import { type LeadCliArgs, leadCliHelp, parseLeadCliArgs } from "./args.js";
 import { persistLeadCliArtifacts } from "./artifacts.js";
+import { fileInputsToMetadata, type LeadCliFileInput, readLeadCliFileInputs } from "./file-input.js";
 import { createLeadAgentRunView, renderLeadAgentJson, renderLeadAgentMarkdown } from "./output.js";
 import { createLeadCliSessionManager } from "./session.js";
 
@@ -48,10 +49,16 @@ function toDispatchMode(value: string | undefined): LeadAgentDispatchMode | unde
 	return value as LeadAgentDispatchMode;
 }
 
-function createTaskRequest(objective: string, args: LeadCliArgs): LeadAgentTaskRequest {
+function createTaskRequest(
+	objective: string,
+	args: LeadCliArgs,
+	fileInputs: readonly LeadCliFileInput[],
+): LeadAgentTaskRequest {
 	const request: LeadAgentTaskRequest = { objective };
-	if (args.constraints.length > 0) {
-		request.constraints = args.constraints;
+	const fileConstraints = fileInputs.map((input) => input.constraint);
+	const constraints = [...args.constraints, ...fileConstraints];
+	if (constraints.length > 0) {
+		request.constraints = constraints;
 	}
 	if (args.expectedOutputs.length > 0) {
 		request.expectedOutputs = args.expectedOutputs;
@@ -69,6 +76,9 @@ function createTaskRequest(objective: string, args: LeadCliArgs): LeadAgentTaskR
 	const dispatchMode = toDispatchMode(args.dispatchMode);
 	if (dispatchMode) {
 		request.dispatchMode = dispatchMode;
+	}
+	if (fileInputs.length > 0) {
+		request.metadata = fileInputsToMetadata(fileInputs);
 	}
 	return request;
 }
@@ -109,7 +119,8 @@ export async function runLeadAgentCli(argv: string[], io: LeadAgentCliIo = {}): 
 		sessionManager,
 		workerRunner: io.workerRunner,
 	});
-	const result = await runtime.run(createTaskRequest(objective, args));
+	const fileInputs = readLeadCliFileInputs(cwd, args.fileArgs);
+	const result = await runtime.run(createTaskRequest(objective, args, fileInputs));
 	const persisted = args.artifactDir ? persistLeadCliArtifacts(result, args.artifactDir) : undefined;
 	const view = createLeadAgentRunView(result, {
 		artifactManifestPath: persisted?.manifestPath,

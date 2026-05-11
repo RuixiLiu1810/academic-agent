@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createExecutionTrace } from "@mariozechner/pi-agent-contracts";
@@ -119,5 +119,49 @@ describe("runLeadAgentCli", () => {
 		expect(stdout.join("")).toContain(`- Artifact manifest: ${join(artifactDir, "artifacts.json")}`);
 		expect(stdout.join("")).toContain("- Decision: worker/reviewer");
 		expect(readdirSync(sessionDir).some((filename) => filename.endsWith(".jsonl"))).toBe(true);
+	});
+
+	it("passes @file inputs as constraints and metadata", async () => {
+		const cwd = makeTempDir();
+		writeFileSync(join(cwd, "notes.md"), "Citation gap: cohort flow.");
+		const stdout: string[] = [];
+		const seenConstraints: string[][] = [];
+		const seenMetadata: unknown[] = [];
+
+		const exitCode = await runLeadAgentCli(
+			["--cwd", cwd, "--task-type", "citation", "--expected-output", "citation audit", "@notes.md", "Review."],
+			{
+				stdin: "",
+				stdout: (text) => stdout.push(text),
+				stderr: () => {},
+				workerRunner: async (request) => {
+					seenConstraints.push(request.constraints);
+					seenMetadata.push(request.metadata);
+					return {
+						taskId: request.taskId,
+						status: "success",
+						summary: "citation audit completed",
+						structuredOutputs: { expectedOutputs: request.expectedOutputs },
+						producedArtifacts: [],
+						warnings: [],
+						openQuestions: [],
+						executionTrace: createExecutionTrace("run-file-input"),
+					};
+				},
+			},
+		);
+
+		expect(exitCode).toBe(0);
+		expect(stdout.join("")).toContain("citation audit completed");
+		expect(seenConstraints[0]?.join("\n")).toContain("Citation gap: cohort flow.");
+		expect(seenMetadata[0]).toMatchObject({
+			cliFiles: [
+				{
+					kind: "text",
+					mediaType: "text/markdown",
+					sizeBytes: 26,
+				},
+			],
+		});
 	});
 });
