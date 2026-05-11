@@ -2,7 +2,13 @@ import type { WorkerResult } from "@mariozechner/pi-agent-contracts";
 import { createExecutionTrace } from "@mariozechner/pi-agent-contracts";
 import { SessionManager } from "@mariozechner/pi-agent-host";
 import { describe, expect, it } from "vitest";
-import { createLeadAgentRuntime, loadAcademicProfilesFromDir, parseAcademicProfileMarkdown } from "../src/index.js";
+import type { LeadAgentTaskRequest } from "../src/index.js";
+import {
+	buildLeadDirectPrompt,
+	createLeadAgentRuntime,
+	loadAcademicProfilesFromDir,
+	parseAcademicProfileMarkdown,
+} from "../src/index.js";
 
 describe("lead-agent runtime", () => {
 	it("loads academic profiles from markdown soul files", () => {
@@ -63,6 +69,7 @@ Use the custom audit role.
 			workerRunner: async () => {
 				throw new Error("worker should not run");
 			},
+			directRunner: async (req) => `Synthesized: ${req.objective}`,
 		});
 
 		const result = await runtime.run({
@@ -71,7 +78,7 @@ Use the custom audit role.
 		});
 
 		expect(result.decision.mode).toBe("direct");
-		expect(result.finalOutput).toContain("Rewrite this paragraph");
+		expect(result.finalOutput).toBe("Synthesized: Rewrite this paragraph into concise academic Chinese.");
 		expect(result.sessionId).toBe(runtime.sessionManager.getSessionId());
 		expect(runtime.sessionManager.getEntries().some((entry) => entry.type === "custom")).toBe(true);
 	});
@@ -138,6 +145,7 @@ Use the custom audit role.
 		const sessionManager = SessionManager.inMemory("/tmp/lead-agent-test");
 		const runtime = createLeadAgentRuntime({
 			sessionManager,
+			directRunner: async (req) => `done: ${req.objective}`,
 			workerRunner: async () => {
 				throw new Error("worker should not run");
 			},
@@ -244,6 +252,7 @@ Use the custom audit role.
 			workerRunner: async () => {
 				throw new Error("worker should not run");
 			},
+			directRunner: async (req) => req.objective,
 		});
 
 		const result = await runtime.run({
@@ -254,5 +263,60 @@ Use the custom audit role.
 
 		expect(result.decision.mode).toBe("direct");
 		expect(result.finalOutput).toContain("Review this manuscript");
+	});
+
+	it("calls directRunner with the task request and uses its return as finalOutput", async () => {
+		const captured: LeadAgentTaskRequest[] = [];
+		const runtime = createLeadAgentRuntime({
+			directRunner: async (req) => {
+				captured.push(req);
+				return "Lead author synthesis result.";
+			},
+			workerRunner: async () => {
+				throw new Error("should not run");
+			},
+		});
+
+		const result = await runtime.run({
+			taskId: "task-direct-runner",
+			objective: "Synthesize the abstract.",
+			constraints: ["150 words max"],
+			dispatchMode: "direct",
+		});
+
+		expect(result.decision.mode).toBe("direct");
+		expect(result.finalOutput).toBe("Lead author synthesis result.");
+		expect(captured).toHaveLength(1);
+		expect(captured[0]?.objective).toBe("Synthesize the abstract.");
+		expect(captured[0]?.constraints).toContain("150 words max");
+	});
+});
+
+describe("buildLeadDirectPrompt", () => {
+	it("includes the objective", () => {
+		const prompt = buildLeadDirectPrompt({ objective: "Draft the introduction." });
+		expect(prompt).toContain("Draft the introduction.");
+	});
+
+	it("includes constraints when provided", () => {
+		const prompt = buildLeadDirectPrompt({
+			objective: "Write abstract.",
+			constraints: ["250 words max", "no first person"],
+		});
+		expect(prompt).toContain("250 words max");
+		expect(prompt).toContain("no first person");
+	});
+
+	it("includes expected outputs when provided", () => {
+		const prompt = buildLeadDirectPrompt({
+			objective: "Synthesize findings.",
+			expectedOutputs: ["summary paragraph"],
+		});
+		expect(prompt).toContain("summary paragraph");
+	});
+
+	it("omits constraints section when not provided", () => {
+		const prompt = buildLeadDirectPrompt({ objective: "Polish conclusion." });
+		expect(prompt).not.toContain("Constraints:");
 	});
 });

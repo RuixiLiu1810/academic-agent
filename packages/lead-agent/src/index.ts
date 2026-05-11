@@ -12,7 +12,7 @@ import type {
 	WorkerResult,
 } from "@mariozechner/pi-agent-contracts";
 import { createAcceptanceReport, createExecutionTrace } from "@mariozechner/pi-agent-contracts";
-import { SessionManager } from "@mariozechner/pi-agent-host";
+import { createAgentHostSession, SessionManager } from "@mariozechner/pi-agent-host";
 import { runCodingWorker } from "@mariozechner/pi-coding-agent";
 
 export type AcademicTaskType = "writing" | "research" | "review" | "revision" | "methods" | "citation";
@@ -48,9 +48,11 @@ export interface LeadAgentResult {
 }
 
 export type LeadAgentWorkerRunner = (request: WorkerRequest) => Promise<WorkerResult>;
+export type LeadAgentDirectRunner = (request: LeadAgentTaskRequest) => Promise<string>;
 
 export interface LeadAgentRuntimeOptions {
 	workerRunner?: LeadAgentWorkerRunner;
+	directRunner?: LeadAgentDirectRunner;
 	profiles?: WorkerProfile[];
 	sessionManager?: SessionManager;
 	cwd?: string;
@@ -331,17 +333,68 @@ function toWorkerRequest(
 	};
 }
 
-function synthesizeDirect(
+async function synthesizeDirect(
 	taskId: string,
 	sessionId: string,
 	request: LeadAgentTaskRequest,
 	decision: LeadAgentDecision,
-): LeadAgentResult {
+	directRunner: LeadAgentDirectRunner,
+): Promise<LeadAgentResult> {
+	const finalOutput = await directRunner(request);
 	return {
 		taskId,
-		finalOutput: request.objective,
+		finalOutput,
 		decision,
 		sessionId,
+	};
+}
+
+export function buildLeadDirectPrompt(request: LeadAgentTaskRequest): string {
+	const sections: string[] = [
+		"You are a lead academic author responsible for unified prose synthesis. Produce precise, well-structured academic writing that directly addresses the objective below.",
+	];
+	sections.push(`Objective:\n${request.objective}`);
+	if (request.constraints && request.constraints.length > 0) {
+		sections.push(`Constraints:\n${request.constraints.map((c) => `- ${c}`).join("\n")}`);
+	}
+	if (request.expectedOutputs && request.expectedOutputs.length > 0) {
+		sections.push(`Expected outputs:\n${request.expectedOutputs.map((o) => `- ${o}`).join("\n")}`);
+	}
+	return sections.join("\n\n");
+}
+
+function extractLastAssistantText(messages: readonly { role: string; content: unknown }[]): string {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const m = messages[i];
+		if (!m || m.role !== "assistant") {
+			continue;
+		}
+		const { content } = m;
+		if (typeof content === "string") {
+			return content;
+		}
+		if (Array.isArray(content)) {
+			return content
+				.filter(
+					(p): p is { type: "text"; text: string } =>
+						typeof p === "object" &&
+						p !== null &&
+						(p as { type?: unknown }).type === "text" &&
+						typeof (p as { text?: unknown }).text === "string",
+				)
+				.map((p) => p.text)
+				.join("\n");
+		}
+	}
+	return "";
+}
+
+function createDefaultDirectRunner(cwd: string): LeadAgentDirectRunner {
+	return async (request) => {
+		const { session } = await createAgentHostSession({ cwd, noTools: "all" });
+		await session.prompt(buildLeadDirectPrompt(request));
+		const text = extractLastAssistantText(session.messages as readonly { role: string; content: unknown }[]);
+		return text.trim().length > 0 ? text : request.objective;
 	};
 }
 
@@ -504,6 +557,7 @@ function recordLeadAssistantMessage(sessionManager: SessionManager, finalOutput:
 export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): LeadAgentRuntime {
 	const profiles = options.profiles ?? loadAcademicProfilesFromDir();
 	const workerRunner = options.workerRunner ?? runCodingWorker;
+	const directRunner = options.directRunner ?? createDefaultDirectRunner(options.cwd ?? process.cwd());
 	const sessionManager = options.sessionManager ?? SessionManager.inMemory(options.cwd ?? process.cwd());
 	return {
 		profiles,
@@ -526,7 +580,7 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 				reason: decision.reason,
 			});
 			if (decision.mode === "direct") {
-				const result = synthesizeDirect(taskId, sessionId, request, decision);
+				const result = await synthesizeDirect(taskId, sessionId, request, decision, directRunner);
 				recordLeadAssistantMessage(sessionManager, result.finalOutput);
 				recordLeadEvent(sessionManager, "lead-agent.result", {
 					taskId,
