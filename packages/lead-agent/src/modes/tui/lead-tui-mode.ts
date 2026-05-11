@@ -12,6 +12,7 @@ import {
 import type { LeadAgentRunView } from "../../cli/output.js";
 import { createLeadAgentRunView } from "../../cli/output.js";
 import type { AcademicTaskType, LeadAgentRuntime } from "../../index.js";
+import { FooterComponent } from "./components/footer.js";
 import { ErrorComponent, RunResultComponent, UserQueryComponent } from "./components/messages.js";
 import { DEFAULT_LEAD_TUI_KEYBINDINGS, type LeadTuiAction } from "./keybindings.js";
 import { createLeadEditorTheme, createLeadMarkdownTheme, createLeadTuiTheme, type LeadTuiTheme } from "./theme.js";
@@ -69,7 +70,7 @@ function parseTuiAcademicTaskType(value: string): AcademicTaskType | undefined {
 function handleTuiSlashCommand(
 	text: string,
 	state: LeadTuiState,
-	footer: Text,
+	footer: FooterComponent,
 	theme: LeadTuiTheme,
 	chatContainer: Container,
 ): void {
@@ -81,7 +82,7 @@ function handleTuiSlashCommand(
 			const parsed = parseTuiAcademicTaskType(value);
 			if (parsed) {
 				state.taskType = parsed;
-				footer.setText(theme.dim(`task-type: ${parsed}`));
+				footer.sync(state);
 			} else {
 				footer.setText(theme.error("task-type must be: writing|research|review|revision|methods|citation"));
 			}
@@ -89,7 +90,7 @@ function handleTuiSlashCommand(
 		}
 		case "profile":
 			state.profileId = value || undefined;
-			footer.setText(theme.dim(`profile: ${state.profileId ?? "auto"}`));
+			footer.sync(state);
 			break;
 		case "expected-output":
 			if (value.length > 0) {
@@ -126,9 +127,7 @@ function handleTuiSlashCommand(
 			state.expectedOutputs = [];
 			state.lastRun = undefined;
 			state.runCount = 0;
-			footer.setText(
-				theme.dim(`session ${state.sessionId} · enter to submit · /help for commands · ctrl+c to exit`),
-			);
+			footer.sync(state);
 			break;
 		case "help":
 			footer.setText(theme.dim("/task-type · /profile · /expected-output · /session · /hotkeys · /new · /help"));
@@ -165,8 +164,7 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 	editorContainer.addChild(editor);
 
 	// Footer status bar
-	const footerHint = `session ${state.sessionId} · enter to submit · /help for commands · ctrl+c to exit`;
-	const footer = new Text(theme.dim(footerHint), 0, 0);
+	const footer = new FooterComponent(theme, state);
 
 	// Layout
 	tui.addChild(new Text(theme.accent("Lead Agent"), 1, 1));
@@ -216,6 +214,7 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 			const view = createLeadAgentRunView(result);
 			state.lastRun = view;
 			state.runCount++;
+			footer.sync(state);
 			loader.stop();
 			loaderContainer.clear();
 			chatContainer.addChild(new RunResultComponent(view, theme, markdownTheme));
