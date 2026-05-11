@@ -1,10 +1,12 @@
 export const LEAD_TASK_TYPES = ["auto", "writing", "research", "review", "revision", "methods", "citation"] as const;
 export const LEAD_DISPATCH_MODES = ["auto", "direct", "worker"] as const;
 export const LEAD_OUTPUT_MODES = ["markdown", "json"] as const;
+export const LEAD_APP_MODES = ["markdown", "json", "interactive"] as const;
 
 export type LeadCliTaskType = (typeof LEAD_TASK_TYPES)[number];
 export type LeadCliDispatchMode = (typeof LEAD_DISPATCH_MODES)[number];
 export type LeadCliOutputMode = (typeof LEAD_OUTPUT_MODES)[number];
+export type LeadCliAppMode = (typeof LEAD_APP_MODES)[number];
 
 export interface LeadCliDiagnostic {
 	type: "warning" | "error";
@@ -13,6 +15,7 @@ export interface LeadCliDiagnostic {
 
 export interface LeadCliArgs {
 	objectiveParts: string[];
+	fileArgs: string[];
 	constraints: string[];
 	expectedOutputs: string[];
 	acceptanceCriteria: string[];
@@ -22,8 +25,14 @@ export interface LeadCliArgs {
 	dispatchMode?: LeadCliDispatchMode;
 	artifactDir?: string;
 	sessionDir?: string;
+	session?: string;
+	fork?: string;
+	continue?: boolean;
+	resume?: boolean;
+	noSession?: boolean;
 	cwd?: string;
 	outputMode: LeadCliOutputMode;
+	appMode?: LeadCliAppMode;
 	help: boolean;
 	diagnostics: LeadCliDiagnostic[];
 }
@@ -53,6 +62,7 @@ function readValue(
 export function parseLeadCliArgs(args: string[]): LeadCliArgs {
 	const result: LeadCliArgs = {
 		objectiveParts: [],
+		fileArgs: [],
 		constraints: [],
 		expectedOutputs: [],
 		acceptanceCriteria: [],
@@ -65,6 +75,25 @@ export function parseLeadCliArgs(args: string[]): LeadCliArgs {
 		const arg = args[index]!;
 		if (arg === "--help" || arg === "-h") {
 			result.help = true;
+		} else if (arg === "--mode") {
+			const value = readValue(args, index, arg, result.diagnostics);
+			if (value) {
+				if (hasValue(LEAD_APP_MODES, value)) {
+					result.appMode = value;
+					if (value === "json") {
+						result.outputMode = "json";
+					}
+					if (value === "markdown") {
+						result.outputMode = "markdown";
+					}
+				} else {
+					result.diagnostics.push({
+						type: "error",
+						message: `Invalid mode "${value}". Valid values: ${LEAD_APP_MODES.join(", ")}`,
+					});
+				}
+				index++;
+			}
 		} else if (arg === "--task-type") {
 			const value = readValue(args, index, arg, result.diagnostics);
 			if (value) {
@@ -137,6 +166,24 @@ export function parseLeadCliArgs(args: string[]): LeadCliArgs {
 				result.sessionDir = value;
 				index++;
 			}
+		} else if (arg === "--continue" || arg === "-c") {
+			result.continue = true;
+		} else if (arg === "--resume" || arg === "-r") {
+			result.resume = true;
+		} else if (arg === "--session") {
+			const value = readValue(args, index, arg, result.diagnostics);
+			if (value) {
+				result.session = value;
+				index++;
+			}
+		} else if (arg === "--fork") {
+			const value = readValue(args, index, arg, result.diagnostics);
+			if (value) {
+				result.fork = value;
+				index++;
+			}
+		} else if (arg === "--no-session") {
+			result.noSession = true;
 		} else if (arg === "--cwd") {
 			const value = readValue(args, index, arg, result.diagnostics);
 			if (value) {
@@ -158,8 +205,12 @@ export function parseLeadCliArgs(args: string[]): LeadCliArgs {
 			}
 		} else if (arg === "--json") {
 			result.outputMode = "json";
+			result.appMode = "json";
 		} else if (arg === "--markdown") {
 			result.outputMode = "markdown";
+			result.appMode = "markdown";
+		} else if (arg.startsWith("@")) {
+			result.fileArgs.push(arg.slice(1));
 		} else if (arg.startsWith("-")) {
 			result.diagnostics.push({ type: "error", message: `Unknown option: ${arg}` });
 		} else {
@@ -177,6 +228,7 @@ Usage:
   ./lead-agent-test.sh [options] <academic task>
 
 Options:
+  --mode <mode>              Run mode: markdown, json, or interactive
   --task-type <type>          Task type: auto, writing, research, review, revision, methods, citation
   --profile <id>              Force an academic profile id such as reviewer or citation-checker
   --profile-dir <path>        Load academic profiles from a Markdown directory
@@ -186,12 +238,18 @@ Options:
   --acceptance <text>         Add an acceptance criterion
   --artifact-dir <path>       Persist CLI artifacts to this directory
   --session-dir <path>        Persist lead-agent session JSONL files to this directory
+  --continue, -c              Continue the most recent lead-agent session
+  --resume, -r                Select a session to resume
+  --session <path|id>         Use a specific session file or partial session id
+  --fork <path|id>            Fork a specific session into a new lead session
+  --no-session                Use an ephemeral in-memory session
   --cwd <path>                Working directory for the lead session
   --output <mode>             Output mode: markdown or json
   --json                      Alias for --output json
   --markdown                  Alias for --output markdown
   --direct                    Alias for --dispatch direct
   --worker                    Alias for --dispatch worker
+  @file                       Include a file as academic context
   --help, -h                  Show this help
 
 If no task argument is provided, the task is read from stdin.`;

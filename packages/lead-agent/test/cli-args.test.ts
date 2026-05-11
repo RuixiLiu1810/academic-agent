@@ -88,4 +88,50 @@ describe("parseLeadCliArgs", () => {
 
 		expect(result.diagnostics).toEqual([{ type: "error", message: "--profile requires a value" }]);
 	});
+
+	it("parses app mode and session lifecycle flags", () => {
+		const result = parseLeadCliArgs([
+			"--mode",
+			"interactive",
+			"--continue",
+			"--session-dir",
+			".tmp/lead-sessions",
+			"Continue the project.",
+		]);
+
+		expect(result.appMode).toBe("interactive");
+		expect(result.continue).toBe(true);
+		expect(result.sessionDir).toBe(".tmp/lead-sessions");
+		expect(result.objectiveParts).toEqual(["Continue the project."]);
+	});
+
+	it("parses explicit session, fork, resume, no-session, and @file args", () => {
+		const result = parseLeadCliArgs([
+			"--session",
+			"abc123",
+			"--fork",
+			"def456",
+			"--resume",
+			"--no-session",
+			"@notes.md",
+			"Review notes.",
+		]);
+
+		expect(result.session).toBe("abc123");
+		expect(result.fork).toBe("def456");
+		expect(result.resume).toBe(true);
+		expect(result.noSession).toBe(true);
+		expect(result.fileArgs).toEqual(["notes.md"]);
+		expect(result.objectiveParts).toEqual(["Review notes."]);
+	});
+
+	it("records invalid app mode as a diagnostic", () => {
+		const result = parseLeadCliArgs(["--mode", "rpc"]);
+
+		expect(result.appMode).toBeUndefined();
+		expect(result.diagnostics).toContainEqual({
+			type: "error",
+			message: 'Invalid mode "rpc". Valid values: markdown, json, interactive',
+		});
+	});
 });
