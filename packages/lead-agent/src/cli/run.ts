@@ -8,6 +8,7 @@ import {
 	loadAcademicProfilesFromDir,
 } from "../index.js";
 import { runLeadInteractiveLoop } from "../modes/interactive-loop.js";
+import { runLeadTuiMode } from "../modes/tui/lead-tui-mode.js";
 import { type LeadCliArgs, leadCliHelp, parseLeadCliArgs } from "./args.js";
 import { persistLeadCliArtifacts } from "./artifacts.js";
 import { fileInputsToMetadata, type LeadCliFileInput, readLeadCliFileInputs } from "./file-input.js";
@@ -123,6 +124,12 @@ export async function runLeadAgentCli(argv: string[], io: LeadAgentCliIo = {}): 
 		workerRunner: io.workerRunner,
 	});
 	if (args.appMode === "interactive") {
+		if (io.stdin === undefined && process.stdin.isTTY) {
+			return runLeadTuiMode({
+				runtime,
+				initialPrompt: args.objectiveParts.join(" ").trim() || undefined,
+			});
+		}
 		return runLeadInteractiveLoop({
 			runtime,
 			inputs: stdinLines(io.stdin),
@@ -136,13 +143,8 @@ export async function runLeadAgentCli(argv: string[], io: LeadAgentCliIo = {}): 
 	const objective = readObjective(args.objectiveParts, io.stdin);
 	if (objective.length === 0) {
 		if (process.stdin.isTTY) {
-			return runLeadInteractiveLoop({
+			return runLeadTuiMode({
 				runtime,
-				stdout,
-				stderr,
-				defaultTaskType: toTaskType(args.taskType),
-				defaultProfileId: args.profileId,
-				defaultExpectedOutputs: args.expectedOutputs,
 			});
 		}
 		stderr(`${leadCliHelp()}\n`);
