@@ -44,6 +44,16 @@ function stdinLines(stdin: string | undefined): string[] | undefined {
 		.filter((line) => line.length > 0);
 }
 
+function interactiveInputLines(stdin: string | undefined): string[] | undefined {
+	if (stdin !== undefined) {
+		return stdinLines(stdin);
+	}
+	if (!process.stdin.isTTY) {
+		return stdinLines(readProcessStdin());
+	}
+	return undefined;
+}
+
 function toTaskType(value: string | undefined): AcademicTaskType | undefined {
 	if (!value || value === "auto") {
 		return undefined;
@@ -132,7 +142,7 @@ export async function runLeadAgentCli(argv: string[], io: LeadAgentCliIo = {}): 
 		}
 		return runLeadInteractiveLoop({
 			runtime,
-			inputs: stdinLines(io.stdin),
+			inputs: interactiveInputLines(io.stdin),
 			stdout,
 			stderr,
 			defaultTaskType: toTaskType(args.taskType),
