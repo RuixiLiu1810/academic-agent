@@ -47,12 +47,14 @@ describe("runLeadAgentCli", () => {
 			stdout: (text) => stdout.push(text),
 			stderr: (text) => stderr.push(text),
 			workerRunner: createWorkerRunner(),
+			directRunner: async (req) => `Direct: ${req.objective}`,
 		});
 
 		expect(exitCode).toBe(0);
 		expect(stderr).toEqual([]);
 		expect(stdout.join("")).toContain("# Lead Agent Result");
 		expect(stdout.join("")).toContain("- Decision: direct");
+		expect(stdout.join("")).toContain("Direct: Rewrite this paragraph.");
 	});
 
 	it("reads objective from stdin and prints json", async () => {

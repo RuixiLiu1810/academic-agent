@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import {
 	type AcademicTaskType,
 	createLeadAgentRuntime,
+	type LeadAgentDirectRunner,
 	type LeadAgentDispatchMode,
 	type LeadAgentTaskRequest,
 	type LeadAgentWorkerRunner,
@@ -20,6 +21,7 @@ export interface LeadAgentCliIo {
 	stdout?: (text: string) => void;
 	stderr?: (text: string) => void;
 	workerRunner?: LeadAgentWorkerRunner;
+	directRunner?: LeadAgentDirectRunner;
 }
 
 function readProcessStdin(): string {
@@ -132,6 +134,7 @@ export async function runLeadAgentCli(argv: string[], io: LeadAgentCliIo = {}): 
 		profiles,
 		sessionManager,
 		workerRunner: io.workerRunner,
+		directRunner: io.directRunner,
 	});
 	if (args.appMode === "interactive") {
 		if (io.stdin === undefined && process.stdin.isTTY) {
