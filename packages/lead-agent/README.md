@@ -76,3 +76,14 @@ Persist artifacts:
 ```bash
 rm -rf .tmp/academic-smoke && ./academic-smoke-test.sh --artifact-dir .tmp/academic-smoke
 ```
+
+## TUI Smoke
+
+The first TUI shell can be exercised in tmux:
+
+```bash
+tmux new-session -d -s lead-agent-tui-test -x 100 -y 30
+tmux send-keys -t lead-agent-tui-test "cd /Users/liuruixi/Documents/Code/pi-mono && ./lead-agent-tui-test.sh" Enter
+sleep 2 && tmux capture-pane -t lead-agent-tui-test -p
+tmux kill-session -t lead-agent-tui-test
+```
