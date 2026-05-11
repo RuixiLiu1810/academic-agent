@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs";
-import { SessionManager } from "@mariozechner/pi-agent-host";
 import {
 	type AcademicTaskType,
 	createLeadAgentRuntime,
@@ -11,6 +10,7 @@ import {
 import { type LeadCliArgs, leadCliHelp, parseLeadCliArgs } from "./args.js";
 import { persistLeadCliArtifacts } from "./artifacts.js";
 import { createLeadAgentRunView, renderLeadAgentJson, renderLeadAgentMarkdown } from "./output.js";
+import { createLeadCliSessionManager } from "./session.js";
 
 export interface LeadAgentCliIo {
 	stdin?: string;
@@ -32,13 +32,6 @@ function readObjective(objectiveParts: string[], stdin: string | undefined): str
 		return objective;
 	}
 	return (stdin ?? readProcessStdin()).trim();
-}
-
-function createSessionManager(cwd: string, sessionDir: string | undefined): SessionManager {
-	if (sessionDir) {
-		return SessionManager.create(cwd, sessionDir);
-	}
-	return SessionManager.inMemory(cwd);
 }
 
 function toTaskType(value: string | undefined): AcademicTaskType | undefined {
@@ -101,7 +94,15 @@ export async function runLeadAgentCli(argv: string[], io: LeadAgentCliIo = {}): 
 	}
 	const cwd = args.cwd ?? process.cwd();
 	const profiles = args.profileDir ? loadAcademicProfilesFromDir(args.profileDir) : undefined;
-	const sessionManager = createSessionManager(cwd, args.sessionDir);
+	const sessionManager = await createLeadCliSessionManager({
+		cwd,
+		sessionDir: args.sessionDir,
+		noSession: args.noSession,
+		continue: args.continue,
+		resume: args.resume,
+		session: args.session,
+		fork: args.fork,
+	});
 	const runtime = createLeadAgentRuntime({
 		cwd,
 		profiles,
