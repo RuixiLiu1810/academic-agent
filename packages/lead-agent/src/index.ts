@@ -624,11 +624,15 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 		async run(request) {
 			abortController = new AbortController();
 			const abortPromise = new Promise<never>((_, reject) => {
-				abortController.signal.addEventListener("abort", () => {
-					const err = new Error("Run aborted by user");
-					err.name = "AbortError";
-					reject(err);
-				});
+				abortController.signal.addEventListener(
+					"abort",
+					() => {
+						const err = new Error("Run aborted by user");
+						err.name = "AbortError";
+						reject(err);
+					},
+					{ once: true },
+				);
 			});
 			return Promise.race([runImpl(request), abortPromise]);
 		},
