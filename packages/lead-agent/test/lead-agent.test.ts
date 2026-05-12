@@ -3,12 +3,8 @@ import { createExecutionTrace } from "@mariozechner/pi-agent-contracts";
 import { SessionManager } from "@mariozechner/pi-agent-host";
 import { describe, expect, it } from "vitest";
 import type { LeadAgentTaskRequest } from "../src/index.js";
-import {
-	buildLeadDirectPrompt,
-	createLeadAgentRuntime,
-	loadAcademicProfilesFromDir,
-	parseAcademicProfileMarkdown,
-} from "../src/index.js";
+import { createLeadAgentRuntime, loadAcademicProfilesFromDir, parseAcademicProfileMarkdown } from "../src/index.js";
+import { buildLeadDirectMessage } from "../src/prompts.js";
 
 describe("lead-agent runtime", () => {
 	it("loads academic profiles from markdown soul files", () => {
@@ -292,14 +288,14 @@ Use the custom audit role.
 	});
 });
 
-describe("buildLeadDirectPrompt", () => {
+describe("buildLeadDirectMessage", () => {
 	it("includes the objective", () => {
-		const prompt = buildLeadDirectPrompt({ objective: "Draft the introduction." });
+		const prompt = buildLeadDirectMessage({ objective: "Draft the introduction." });
 		expect(prompt).toContain("Draft the introduction.");
 	});
 
 	it("includes constraints when provided", () => {
-		const prompt = buildLeadDirectPrompt({
+		const prompt = buildLeadDirectMessage({
 			objective: "Write abstract.",
 			constraints: ["250 words max", "no first person"],
 		});
@@ -308,7 +304,7 @@ describe("buildLeadDirectPrompt", () => {
 	});
 
 	it("includes expected outputs when provided", () => {
-		const prompt = buildLeadDirectPrompt({
+		const prompt = buildLeadDirectMessage({
 			objective: "Synthesize findings.",
 			expectedOutputs: ["summary paragraph"],
 		});
@@ -316,7 +312,7 @@ describe("buildLeadDirectPrompt", () => {
 	});
 
 	it("omits constraints section when not provided", () => {
-		const prompt = buildLeadDirectPrompt({ objective: "Polish conclusion." });
+		const prompt = buildLeadDirectMessage({ objective: "Polish conclusion." });
 		expect(prompt).not.toContain("Constraints:");
 	});
 });
