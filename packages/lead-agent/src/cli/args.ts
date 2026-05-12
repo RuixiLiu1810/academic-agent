@@ -30,6 +30,7 @@ export interface LeadCliArgs {
 	profileDir?: string;
 	dispatchMode?: LeadCliDispatchMode;
 	artifactDir?: string;
+	confirmPlan?: boolean;
 	sessionDir?: string;
 	session?: string;
 	fork?: string;
@@ -190,6 +191,8 @@ export function parseLeadCliArgs(args: string[]): LeadCliArgs {
 				result.artifactDir = value;
 				index++;
 			}
+		} else if (arg === "--confirm-plan") {
+			result.confirmPlan = true;
 		} else if (arg === "--session-dir") {
 			const value = readValue(args, index, arg, result.diagnostics);
 			if (value) {
@@ -330,6 +333,7 @@ Options:
   --expected-output <text>    Add an expected worker output
   --acceptance <text>         Add an acceptance criterion
   --artifact-dir <path>       Persist CLI artifacts to this directory
+  --confirm-plan              Record that generated workflow plans should be confirmable
   --session-dir <path>        Persist lead-agent session JSONL files to this directory
   --continue, -c              Continue the most recent lead-agent session
   --resume, -r                Select a session to resume

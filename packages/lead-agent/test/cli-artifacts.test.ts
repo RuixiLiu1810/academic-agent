@@ -54,9 +54,11 @@ describe("persistLeadCliArtifacts", () => {
 	it("writes final output, result json, acceptance report, and manifest", () => {
 		const artifactDir = makeTempDir();
 		const persisted = persistLeadCliArtifacts(resultFixture(), artifactDir);
+		const taskDir = join(artifactDir, "tasks", "artifact-task");
 
 		expect(persisted.manifestPath).toBe(join(artifactDir, "artifacts.json"));
 		expect(readFileSync(join(artifactDir, "artifacts.json"), "utf8")).toContain("lead-cli-result");
+		expect(persisted.finalOutputPath).toBe(join(taskDir, "final-output.md"));
 		expect(readFileSync(persisted.finalOutputPath, "utf8")).toBe("Final academic answer.\n");
 		expect(JSON.parse(readFileSync(persisted.resultJsonPath, "utf8"))).toMatchObject({
 			taskId: "artifact-task",

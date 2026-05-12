@@ -219,6 +219,8 @@ export async function runLeadAgentCli(argv: string[], io: LeadAgentCliIo = {}): 
 		sessionManager,
 		workerRunner: io.workerRunner,
 		directRunner: io.directRunner,
+		artifactDir: args.artifactDir,
+		confirmPlan: args.confirmPlan,
 		model: resolvedModel,
 		thinkingLevel: args.thinking,
 		tools: toolsArg,

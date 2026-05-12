@@ -12,6 +12,7 @@ describe("parseLeadCliArgs", () => {
 			"worker",
 			"--artifact-dir",
 			".tmp/artifacts",
+			"--confirm-plan",
 			"--session-dir",
 			".tmp/sessions",
 			"--output",
@@ -23,6 +24,7 @@ describe("parseLeadCliArgs", () => {
 		expect(result.profileId).toBe("citation-checker");
 		expect(result.dispatchMode).toBe("worker");
 		expect(result.artifactDir).toBe(".tmp/artifacts");
+		expect(result.confirmPlan).toBe(true);
 		expect(result.sessionDir).toBe(".tmp/sessions");
 		expect(result.outputMode).toBe("json");
 		expect(result.objectiveParts).toEqual(["Check citation support."]);

@@ -1,7 +1,5 @@
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { FileSystemArtifactStore } from "@mariozechner/pi-artifact-core";
 import type { LeadAgentResult } from "../index.js";
+import { createLeadSessionWorkspace } from "../orchestration/workspace.js";
 
 export interface PersistedLeadCliArtifacts {
 	finalOutputPath: string;
@@ -10,21 +8,18 @@ export interface PersistedLeadCliArtifacts {
 	manifestPath: string;
 }
 
-function writeJson(path: string, value: unknown): void {
-	writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`);
-}
-
 export function persistLeadCliArtifacts(result: LeadAgentResult, artifactDir: string): PersistedLeadCliArtifacts {
-	const store = new FileSystemArtifactStore(artifactDir);
-	const finalOutputPath = join(artifactDir, "final-output.md");
-	const resultJsonPath = join(artifactDir, "lead-result.json");
-	const acceptanceReportPath = result.acceptanceReport ? join(artifactDir, "acceptance-report.json") : undefined;
-	writeFileSync(finalOutputPath, `${result.finalOutput}\n`);
-	writeJson(resultJsonPath, result);
-	if (result.acceptanceReport && acceptanceReportPath) {
-		writeJson(acceptanceReportPath, result.acceptanceReport);
-	}
-	store.create({
+	const workspace = createLeadSessionWorkspace({
+		cwd: process.cwd(),
+		sessionId: result.sessionId,
+		artifactDir,
+	});
+	const finalOutputPath = workspace.writeFinalOutput(result.taskId, result.finalOutput);
+	const resultJsonPath = workspace.writeTaskJson(result.taskId, "lead-result.json", result);
+	const acceptanceReportPath = result.acceptanceReport
+		? workspace.writeTaskJson(result.taskId, "acceptance-report.json", result.acceptanceReport)
+		: undefined;
+	workspace.store.create({
 		kind: "lead-cli-result",
 		title: "Lead agent final output",
 		mediaType: "text/markdown",
@@ -40,6 +35,6 @@ export function persistLeadCliArtifacts(result: LeadAgentResult, artifactDir: st
 		finalOutputPath,
 		resultJsonPath,
 		acceptanceReportPath,
-		manifestPath: join(artifactDir, "artifacts.json"),
+		manifestPath: workspace.manifestPath,
 	};
 }
