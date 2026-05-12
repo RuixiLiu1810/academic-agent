@@ -2,22 +2,31 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
-	AcceptanceIssue,
 	AcceptanceReport,
+	ArtifactBrief,
 	ArtifactRef,
 	JsonObject,
-	JsonValue,
 	WorkerProfile,
 	WorkerRequest,
 	WorkerResult,
+	WorkflowPlan,
 } from "@mariozechner/pi-agent-contracts";
-import { createAcceptanceReport, createExecutionTrace } from "@mariozechner/pi-agent-contracts";
 import {
 	type AgentHostSessionEvent,
 	createAgentHostSession,
 	type ModelRegistry,
 	SessionManager,
 } from "@mariozechner/pi-agent-host";
+import {
+	createLeadSessionWorkspace,
+	createLeadTaskPlanningInput,
+	createTemplateWorkflowPlanner,
+	executeWorkflowPlan,
+	type LeadSessionWorkspace,
+	selectWorkflowTemplateCandidates,
+	synthesizeWorkflowFinalOutput,
+	type WorkflowPlanner,
+} from "./orchestration/index.js";
 import { buildLeadDirectMessage, LEAD_AGENT_SYSTEM_PROMPT } from "./prompts.js";
 import { dispatchCodingWorker } from "./workers/coding-worker-dispatcher.js";
 
@@ -57,6 +66,8 @@ export interface LeadAgentResult {
 	finalOutput: string;
 	decision: LeadAgentDecision;
 	sessionId: string;
+	workflowPlan?: WorkflowPlan;
+	artifactBriefs?: ArtifactBrief[];
 	acceptanceReport?: AcceptanceReport;
 	workerResult?: WorkerResult;
 }
@@ -67,6 +78,10 @@ export type LeadAgentDirectRunner = (request: LeadAgentTaskRequest) => Promise<s
 export interface LeadAgentRuntimeOptions {
 	workerRunner?: LeadAgentWorkerRunner;
 	directRunner?: LeadAgentDirectRunner;
+	workflowPlanner?: WorkflowPlanner;
+	workspace?: LeadSessionWorkspace;
+	artifactDir?: string;
+	confirmPlan?: boolean;
 	profiles?: WorkerProfile[];
 	sessionManager?: SessionManager;
 	cwd?: string;
@@ -338,23 +353,48 @@ export function planLeadAgentTask(
 	};
 }
 
-function toWorkerRequest(
+function createDirectWorkflowPlan(taskId: string, sessionId: string, request: LeadAgentTaskRequest): WorkflowPlan {
+	return {
+		taskId,
+		sessionId,
+		objective: request.objective,
+		rationale: "Task was selected for direct lead-author synthesis.",
+		userVisibleSummary: "I will handle this directly.",
+		mode: "direct",
+		steps: [],
+		stopConditions: ["Final answer produced"],
+	};
+}
+
+function createSingleStepWorkflowPlan(
 	taskId: string,
+	sessionId: string,
 	request: LeadAgentTaskRequest,
 	decision: LeadAgentDecision,
 	profiles: readonly WorkerProfile[],
-): WorkerRequest {
+): WorkflowPlan {
 	const profile = profiles.find((candidate) => candidate.id === decision.profileId);
+	const profileId = decision.profileId ?? profile?.id ?? "researcher";
 	return {
 		taskId,
-		workerType: decision.workerType ?? "academic-worker",
+		sessionId,
 		objective: request.objective,
-		constraints: request.constraints ?? [],
-		inputArtifacts: request.inputArtifacts ?? [],
-		expectedOutputs: request.expectedOutputs ?? profile?.expectedOutputs ?? ["worker summary"],
-		acceptanceCriteria: request.acceptanceCriteria ?? profile?.acceptanceChecklist ?? [],
-		profile,
-		metadata: request.metadata,
+		rationale: decision.reason,
+		userVisibleSummary: `I will run the ${profile?.name ?? profileId} worker and synthesize the accepted result.`,
+		mode: "workflow",
+		steps: [
+			{
+				id: profileId,
+				order: 1,
+				profileId,
+				objective: request.objective,
+				inputArtifactRefs: request.inputArtifacts ?? [],
+				expectedArtifactKinds: profile?.expectedOutputs ?? ["worker-summary"],
+				expectedOutputs: request.expectedOutputs ?? profile?.expectedOutputs ?? ["worker summary"],
+				acceptanceCriteria: request.acceptanceCriteria ?? profile?.acceptanceChecklist ?? [],
+			},
+		],
+		stopConditions: ["Worker result accepted"],
 	};
 }
 
@@ -371,6 +411,8 @@ async function synthesizeDirect(
 		finalOutput,
 		decision,
 		sessionId,
+		workflowPlan: createDirectWorkflowPlan(taskId, sessionId, request),
+		artifactBriefs: [],
 	};
 }
 
@@ -450,132 +492,6 @@ function createDefaultDirectRunner(
 	};
 }
 
-function synthesizeWorkerResult(
-	taskId: string,
-	sessionId: string,
-	decision: LeadAgentDecision,
-	workerResult: WorkerResult,
-	acceptanceReport: AcceptanceReport,
-): LeadAgentResult {
-	if (!acceptanceReport.accepted) {
-		return {
-			taskId,
-			finalOutput: `Worker result was not accepted: ${workerResult.summary}`,
-			decision,
-			sessionId,
-			acceptanceReport,
-			workerResult,
-		};
-	}
-	return {
-		taskId,
-		finalOutput: workerResult.summary,
-		decision,
-		sessionId,
-		acceptanceReport,
-		workerResult,
-	};
-}
-
-function normalizeForMatch(value: string): string {
-	return value.trim().toLowerCase();
-}
-
-function textIncludesExpected(text: string, expected: string): boolean {
-	const normalizedText = normalizeForMatch(text);
-	const normalizedExpected = normalizeForMatch(expected);
-	return normalizedExpected.length === 0 || normalizedText.includes(normalizedExpected);
-}
-
-function artifactMatchesExpected(artifact: ArtifactRef, expected: string): boolean {
-	return [artifact.id, artifact.kind, artifact.uri, artifact.title ?? "", artifact.mediaType ?? ""].some((value) =>
-		textIncludesExpected(value, expected),
-	);
-}
-
-function jsonValueMatchesExpected(value: JsonValue | undefined, expected: string): boolean {
-	if (value === undefined || value === null) {
-		return false;
-	}
-	if (typeof value === "string") {
-		return textIncludesExpected(value, expected);
-	}
-	if (typeof value === "number" || typeof value === "boolean") {
-		return textIncludesExpected(String(value), expected);
-	}
-	if (Array.isArray(value)) {
-		return value.some((item) => jsonValueMatchesExpected(item, expected));
-	}
-	return Object.entries(value).some(
-		([key, item]) => textIncludesExpected(key, expected) || jsonValueMatchesExpected(item, expected),
-	);
-}
-
-function workerResultSatisfiesExpectedOutput(workerResult: WorkerResult, expectedOutput: string): boolean {
-	return (
-		textIncludesExpected(workerResult.summary, expectedOutput) ||
-		workerResult.producedArtifacts.some((artifact) => artifactMatchesExpected(artifact, expectedOutput)) ||
-		jsonValueMatchesExpected(workerResult.structuredOutputs, expectedOutput)
-	);
-}
-
-function acceptanceIssuesForWorkerResult(workerRequest: WorkerRequest, workerResult: WorkerResult): AcceptanceIssue[] {
-	const issues: AcceptanceIssue[] = [];
-	if (workerResult.status !== "success") {
-		issues.push({
-			code: "worker_failed",
-			message: workerResult.failureReason ?? `Worker returned status ${workerResult.status}.`,
-			severity: "error",
-		});
-	}
-	for (const expectedOutput of workerRequest.expectedOutputs) {
-		if (!workerResultSatisfiesExpectedOutput(workerResult, expectedOutput)) {
-			issues.push({
-				code: "expected_output_missing",
-				message: `Worker result did not satisfy expected output: ${expectedOutput}`,
-				severity: "error",
-			});
-		}
-	}
-	for (const warning of workerResult.warnings) {
-		issues.push({
-			code: "worker_warning",
-			message: warning,
-			severity: "warning",
-		});
-	}
-	for (const question of workerResult.openQuestions) {
-		issues.push({
-			code: "worker_open_question",
-			message: question,
-			severity: "info",
-		});
-	}
-	return issues;
-}
-
-function createLeadAcceptanceReport(workerRequest: WorkerRequest, workerResult: WorkerResult): AcceptanceReport {
-	return createAcceptanceReport(workerResult, acceptanceIssuesForWorkerResult(workerRequest, workerResult));
-}
-
-function errorMessage(error: unknown): string {
-	return error instanceof Error ? error.message : String(error);
-}
-
-function createFailedWorkerResult(taskId: string, sessionId: string, error: unknown): WorkerResult {
-	const message = errorMessage(error);
-	return {
-		taskId,
-		status: "failed",
-		summary: "Worker failed before producing an accepted result.",
-		producedArtifacts: [],
-		warnings: [message],
-		openQuestions: ["Retry with a narrower worker request or handle the task directly in the lead agent."],
-		executionTrace: createExecutionTrace(`lead-worker-failure-${taskId}`, sessionId),
-		failureReason: message,
-	};
-}
-
 function recordLeadEvent(sessionManager: SessionManager, customType: string, data: JsonObject): void {
 	sessionManager.appendCustomEntry(customType, data);
 }
@@ -606,9 +522,39 @@ function recordLeadAssistantMessage(sessionManager: SessionManager, finalOutput:
 	});
 }
 
+function decisionForWorkflowPlan(plan: WorkflowPlan, fallback: LeadAgentDecision): LeadAgentDecision {
+	if (plan.mode === "direct") {
+		return {
+			mode: "direct",
+			reason: plan.rationale,
+		};
+	}
+	const firstStep = [...plan.steps].sort((a, b) => a.order - b.order)[0];
+	if (!firstStep) {
+		return fallback;
+	}
+	return {
+		mode: "worker",
+		workerType: firstStep.profileId,
+		profileId: firstStep.profileId,
+		reason: plan.rationale,
+	};
+}
+
+function latestWorkflowWorkerResult(stepResults: readonly { workerResult?: WorkerResult }[]): WorkerResult | undefined {
+	for (let i = stepResults.length - 1; i >= 0; i--) {
+		const workerResult = stepResults[i]?.workerResult;
+		if (workerResult) {
+			return workerResult;
+		}
+	}
+	return undefined;
+}
+
 export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): LeadAgentRuntime {
 	const profiles = options.profiles ?? loadAcademicProfilesFromDir();
 	const workerRunner = options.workerRunner ?? dispatchCodingWorker;
+	const workflowPlanner = options.workflowPlanner ?? createTemplateWorkflowPlanner();
 	const sessionManager = options.sessionManager ?? SessionManager.inMemory(options.cwd ?? process.cwd());
 
 	// Mutable refs so setModel() can update them after creation
@@ -648,7 +594,9 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			reason: decision.reason,
 		});
 		if (decision.mode === "direct") {
+			const workflowPlan = createDirectWorkflowPlan(taskId, sessionId, request);
 			const result = await synthesizeDirect(taskId, sessionId, request, decision, directRunner);
+			result.workflowPlan = workflowPlan;
 			recordLeadAssistantMessage(sessionManager, result.finalOutput);
 			recordLeadEvent(sessionManager, "lead-agent.result", {
 				taskId,
@@ -657,27 +605,66 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			});
 			return result;
 		}
-		const workerRequest = toWorkerRequest(taskId, request, decision, profiles);
-		recordLeadEvent(sessionManager, "lead-agent.worker_request", {
-			taskId,
-			workerType: workerRequest.workerType,
-			expectedOutputs: workerRequest.expectedOutputs,
+
+		const templateCandidates = selectWorkflowTemplateCandidates({
+			objective: request.objective,
+			expectedOutputs: request.expectedOutputs ?? [],
+			inputArtifacts: request.inputArtifacts ?? [],
 		});
-		let workerResult: WorkerResult;
-		let acceptanceReport: AcceptanceReport;
-		try {
-			workerResult = await workerRunner(workerRequest);
-			acceptanceReport = createLeadAcceptanceReport(workerRequest, workerResult);
-		} catch (error) {
-			workerResult = createFailedWorkerResult(taskId, sessionId, error);
-			acceptanceReport = createLeadAcceptanceReport(workerRequest, workerResult);
+		const planningInput = createLeadTaskPlanningInput({
+			request,
+			taskId,
+			sessionId,
+			profiles,
+			templateCandidates,
+		});
+		let workflowPlan = await workflowPlanner.plan(planningInput);
+		if (
+			workflowPlan.mode === "direct" ||
+			(request.profileId && !workflowPlan.steps.some((step) => step.profileId === request.profileId))
+		) {
+			workflowPlan = createSingleStepWorkflowPlan(taskId, sessionId, request, decision, profiles);
 		}
-		const result = synthesizeWorkerResult(taskId, sessionId, decision, workerResult, acceptanceReport);
+		const workflowDecision = decisionForWorkflowPlan(workflowPlan, decision);
+		recordLeadEvent(sessionManager, "lead-agent.workflow_plan", {
+			taskId,
+			mode: workflowPlan.mode,
+			stepCount: workflowPlan.steps.length,
+			confirmPlan: options.confirmPlan ?? false,
+		});
+		const workspace =
+			options.workspace ??
+			createLeadSessionWorkspace({
+				cwd: sessionManager.getCwd(),
+				sessionId,
+				artifactDir: options.artifactDir,
+			});
+		const execution = await executeWorkflowPlan({
+			plan: workflowPlan,
+			profiles,
+			workspace,
+			workerRunner,
+			constraints: request.constraints ?? [],
+			metadata: request.metadata,
+		});
+		const acceptanceReport = execution.acceptanceReports.at(-1);
+		const workerResult = latestWorkflowWorkerResult(execution.stepResults);
+		const finalOutput = synthesizeWorkflowFinalOutput(workflowPlan, execution);
+		const result: LeadAgentResult = {
+			taskId,
+			finalOutput,
+			decision: workflowDecision,
+			sessionId,
+			workflowPlan,
+			artifactBriefs: execution.artifactBriefs,
+			acceptanceReport,
+			workerResult,
+		};
 		recordLeadAssistantMessage(sessionManager, result.finalOutput);
 		recordLeadEvent(sessionManager, "lead-agent.result", {
 			taskId,
 			finalOutput: result.finalOutput,
-			accepted: acceptanceReport.accepted,
+			accepted: acceptanceReport?.accepted ?? execution.accepted,
 		});
 		return result;
 	}

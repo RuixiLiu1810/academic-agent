@@ -61,7 +61,7 @@ describe("runLeadAgentCli", () => {
 		const stdout: string[] = [];
 
 		const exitCode = await runLeadAgentCli(
-			["--json", "--task-type", "citation", "--expected-output", "citation audit"],
+			["--cwd", makeTempDir(), "--json", "--task-type", "citation", "--expected-output", "citation audit"],
 			{
 				stdin: "Check citation support.",
 				stdout: (text) => stdout.push(text),
@@ -101,6 +101,8 @@ describe("runLeadAgentCli", () => {
 			[
 				"--task-type",
 				"review",
+				"--cwd",
+				makeTempDir(),
 				"--expected-output",
 				"review memo",
 				"--artifact-dir",
@@ -170,7 +172,7 @@ describe("runLeadAgentCli", () => {
 	it("runs piped interactive mode commands", async () => {
 		const stdout: string[] = [];
 
-		const exitCode = await runLeadAgentCli(["--mode", "interactive"], {
+		const exitCode = await runLeadAgentCli(["--cwd", makeTempDir(), "--mode", "interactive"], {
 			stdin: "/task-type review\n/expected-output review memo\nReview this excerpt.\n/exit\n",
 			stdout: (text) => stdout.push(text),
 			stderr: () => {},

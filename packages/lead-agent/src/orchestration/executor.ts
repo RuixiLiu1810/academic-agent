@@ -2,6 +2,7 @@ import type {
 	AcceptanceReport,
 	ArtifactBrief,
 	ArtifactRef,
+	JsonObject,
 	WorkerProfile,
 	WorkerRequest,
 	WorkerResult,
@@ -18,6 +19,8 @@ export interface ExecuteWorkflowPlanOptions {
 	profiles: readonly WorkerProfile[];
 	workspace: LeadSessionWorkspace;
 	workerRunner: LeadAgentWorkerRunner;
+	constraints?: string[];
+	metadata?: JsonObject;
 }
 
 export interface WorkflowExecutionResult {
@@ -53,6 +56,8 @@ function workerRequestForStep(
 	stepIndex: number,
 	profiles: readonly WorkerProfile[],
 	inputArtifacts: ArtifactRef[],
+	constraints: string[],
+	metadata: JsonObject | undefined,
 ): WorkerRequest {
 	const step = plan.steps[stepIndex]!;
 	const profile = profiles.find((candidate) => candidate.id === step.profileId);
@@ -60,13 +65,14 @@ function workerRequestForStep(
 		taskId: `${plan.taskId}:${step.id}`,
 		workerType: step.profileId,
 		objective: step.objective,
-		constraints: plan.stopConditions,
+		constraints,
 		inputArtifacts,
 		expectedOutputs: step.expectedOutputs,
 		acceptanceCriteria: step.acceptanceCriteria,
 		executionBudget: step.budget,
 		profile,
 		metadata: {
+			...metadata,
 			leadTaskId: plan.taskId,
 			workflowStepId: step.id,
 			workflowStepOrder: step.order,
@@ -101,7 +107,14 @@ export async function executeWorkflowPlan(options: ExecuteWorkflowPlanOptions): 
 	const orderedSteps = [...plan.steps].sort((a, b) => a.order - b.order);
 	for (const [stepIndex, step] of orderedSteps.entries()) {
 		const inputArtifacts = mergeArtifactRefs(step.inputArtifactRefs, carriedArtifacts);
-		const workerRequest = workerRequestForStep({ ...plan, steps: orderedSteps }, stepIndex, profiles, inputArtifacts);
+		const workerRequest = workerRequestForStep(
+			{ ...plan, steps: orderedSteps },
+			stepIndex,
+			profiles,
+			inputArtifacts,
+			options.constraints ?? [],
+			options.metadata,
+		);
 		workspace.writeStepJson(plan.taskId, step.order, step.profileId, "worker-request.json", workerRequest);
 
 		let workerResult: WorkerResult;

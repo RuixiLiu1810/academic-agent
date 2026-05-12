@@ -1,10 +1,28 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { WorkerResult } from "@mariozechner/pi-agent-contracts";
 import { createExecutionTrace } from "@mariozechner/pi-agent-contracts";
 import { SessionManager } from "@mariozechner/pi-agent-host";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { LeadAgentTaskRequest } from "../src/index.js";
 import { createLeadAgentRuntime, loadAcademicProfilesFromDir, parseAcademicProfileMarkdown } from "../src/index.js";
 import { buildLeadDirectMessage } from "../src/prompts.js";
+
+let tempDirs: string[] = [];
+
+function makeTempDir(): string {
+	const dir = mkdtempSync(join(tmpdir(), "lead-agent-runtime-"));
+	tempDirs.push(dir);
+	return dir;
+}
+
+afterEach(() => {
+	for (const dir of tempDirs) {
+		rmSync(dir, { recursive: true, force: true });
+	}
+	tempDirs = [];
+});
 
 describe("lead-agent runtime", () => {
 	it("loads academic profiles from markdown soul files", () => {
@@ -84,12 +102,26 @@ Use the custom audit role.
 			taskId: "task-2",
 			status: "success",
 			summary: "Evidence gaps: missing cohort flow and citation support.",
-			producedArtifacts: [],
+			producedArtifacts: [
+				{
+					id: "claim-audit-1",
+					kind: "claim-audit",
+					uri: "memory://claim-audit-1",
+				},
+			],
+			artifactBriefs: [
+				{
+					artifactId: "claim-audit-1",
+					kind: "claim-audit",
+					brief: "Missing cohort flow and citation support.",
+				},
+			],
 			warnings: [],
 			openQuestions: [],
 			executionTrace: createExecutionTrace("run-1"),
 		};
 		const runtime = createLeadAgentRuntime({
+			cwd: makeTempDir(),
 			workerRunner: async (request) => ({ ...workerResult, taskId: request.taskId }),
 		});
 
@@ -105,6 +137,11 @@ Use the custom audit role.
 		});
 		expect(result.acceptanceReport?.accepted).toBe(true);
 		expect(result.finalOutput).toContain("Evidence gaps");
+		expect(result.workflowPlan).toMatchObject({
+			mode: "workflow",
+			steps: [{ profileId: "citation-checker" }],
+		});
+		expect(result.artifactBriefs).toEqual(workerResult.artifactBriefs);
 	});
 
 	it("rejects worker results that miss explicit expected outputs", async () => {
@@ -118,6 +155,7 @@ Use the custom audit role.
 			executionTrace: createExecutionTrace("run-expected-output"),
 		};
 		const runtime = createLeadAgentRuntime({
+			cwd: makeTempDir(),
 			workerRunner: async (request) => ({ ...workerResult, taskId: request.taskId }),
 		});
 
@@ -164,6 +202,7 @@ Use the custom audit role.
 
 	it("turns worker failures into rejected acceptance reports", async () => {
 		const runtime = createLeadAgentRuntime({
+			cwd: makeTempDir(),
 			workerRunner: async () => {
 				throw new Error("worker unavailable");
 			},
@@ -186,6 +225,7 @@ Use the custom audit role.
 
 	it("routes explicit citation task type to the citation checker profile", async () => {
 		const runtime = createLeadAgentRuntime({
+			cwd: makeTempDir(),
 			workerRunner: async (request) => ({
 				taskId: request.taskId,
 				status: "success",
@@ -215,6 +255,7 @@ Use the custom audit role.
 
 	it("lets explicit profile override task type", async () => {
 		const runtime = createLeadAgentRuntime({
+			cwd: makeTempDir(),
 			workerRunner: async (request) => ({
 				taskId: request.taskId,
 				status: "success",

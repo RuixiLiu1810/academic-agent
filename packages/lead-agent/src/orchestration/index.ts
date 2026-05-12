@@ -2,6 +2,7 @@ export * from "./acceptance.js";
 export * from "./executor.js";
 export * from "./intake.js";
 export * from "./planner.js";
+export * from "./synthesis.js";
 export * from "./templates.js";
 export * from "./types.js";
 export * from "./workspace.js";

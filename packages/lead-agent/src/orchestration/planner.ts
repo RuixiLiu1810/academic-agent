@@ -69,6 +69,7 @@ export function createTemplateWorkflowPlanner(): WorkflowPlanner {
 				...step,
 				order: index + 1,
 				inputArtifactRefs: input.inputArtifacts,
+				expectedOutputs: input.expectedOutputs.length > 0 ? input.expectedOutputs : step.expectedOutputs,
 			})),
 			stopConditions: ["All planned steps are accepted"],
 		};
