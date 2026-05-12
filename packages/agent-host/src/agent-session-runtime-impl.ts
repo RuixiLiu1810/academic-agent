@@ -8,18 +8,7 @@ import type {
 } from "./agent-session-services.js";
 import type { ReplacedSessionContext, SessionShutdownEvent, SessionStartEvent } from "./extensions.js";
 import { assertSessionCwdExists } from "./session-cwd.js";
-import { type SessionContext, type SessionEntry, SessionManager } from "./session-manager.js";
-
-interface SessionManagerLike {
-	getSessionFile(): string | undefined;
-	getCwd(): string;
-	getSessionDir(): string;
-	isPersisted(): boolean;
-	newSession(options?: { parentSession?: string }): void;
-	getEntry(entryId: string): SessionEntry | undefined;
-	createBranchedSession(targetLeafId: string | null): string | undefined;
-	buildSessionContext(): SessionContext;
-}
+import { SessionManager } from "./session-manager.js";
 
 export interface CreateAgentSessionRuntimeResult extends CreateAgentSessionResult {
 	services: AgentSessionServices;
@@ -29,7 +18,7 @@ export interface CreateAgentSessionRuntimeResult extends CreateAgentSessionResul
 export type CreateAgentSessionRuntimeFactory = (options: {
 	cwd: string;
 	agentDir: string;
-	sessionManager: SessionManagerLike;
+	sessionManager: SessionManager;
 	sessionStartEvent?: SessionStartEvent;
 }) => Promise<CreateAgentSessionRuntimeResult>;
 
@@ -191,7 +180,7 @@ export class AgentSessionRuntime {
 
 	async newSession(options?: {
 		parentSession?: string;
-		setup?: (sessionManager: SessionManagerLike) => Promise<void>;
+		setup?: (sessionManager: SessionManager) => Promise<void>;
 		withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
 	}): Promise<{ cancelled: boolean }> {
 		const beforeResult = await this.emitBeforeSwitch("new");

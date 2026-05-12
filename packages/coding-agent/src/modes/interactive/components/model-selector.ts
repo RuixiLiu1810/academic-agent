@@ -1,3 +1,5 @@
+import type { ModelRegistry } from "@mariozechner/pi-agent-host/model-registry";
+import type { SettingsManager } from "@mariozechner/pi-agent-host/settings-manager";
 import { type Model, modelsAreEqual } from "@mariozechner/pi-ai";
 import {
 	Container,
@@ -9,8 +11,6 @@ import {
 	Text,
 	type TUI,
 } from "@mariozechner/pi-tui";
-import type { ModelRegistry } from "../../../core/model-registry.js";
-import type { SettingsManager } from "../../../core/settings-manager.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint } from "./keybinding-hints.js";

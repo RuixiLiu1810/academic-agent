@@ -1,5 +1,5 @@
+import type { BranchSummaryMessage } from "@mariozechner/pi-agent-host/messages";
 import { Box, Markdown, type MarkdownTheme, Spacer, Text } from "@mariozechner/pi-tui";
-import type { BranchSummaryMessage } from "../../../core/messages.js";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
 import { keyText } from "./keybinding-hints.js";
 

@@ -2,8 +2,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { discoverAndLoadExtensions } from "@mariozechner/pi-agent-host/extensions";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { discoverAndLoadExtensions } from "../src/core/extensions/loader.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -440,7 +440,7 @@ describe("extensions discovery", () => {
 		fs.writeFileSync(explicitPath, extensionCodeWithTool("explicit"));
 
 		// Use loadExtensions directly to skip discovery
-		const { loadExtensions } = await import("../src/core/extensions/loader.js");
+		const { loadExtensions } = await import("@mariozechner/pi-agent-host/extensions");
 		const result = await loadExtensions([explicitPath], tempDir);
 
 		expect(result.errors).toHaveLength(0);
@@ -454,7 +454,7 @@ describe("extensions discovery", () => {
 		fs.writeFileSync(path.join(extensionsDir, "discovered.ts"), extensionCode);
 
 		// Use loadExtensions directly with empty paths
-		const { loadExtensions } = await import("../src/core/extensions/loader.js");
+		const { loadExtensions } = await import("@mariozechner/pi-agent-host/extensions");
 		const result = await loadExtensions([], tempDir);
 
 		expect(result.errors).toHaveLength(0);

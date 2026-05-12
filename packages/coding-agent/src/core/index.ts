@@ -10,13 +10,13 @@ export {
 	type ModelCycleResult,
 	type PromptOptions,
 	type SessionStats,
-} from "./agent-session.js";
+} from "@mariozechner/pi-agent-host/agent-session";
 export {
 	AgentSessionRuntime,
 	type CreateAgentSessionRuntimeFactory,
 	type CreateAgentSessionRuntimeResult,
 	createAgentSessionRuntime,
-} from "./agent-session-runtime.js";
+} from "@mariozechner/pi-agent-host/agent-session-runtime";
 export {
 	type AgentSessionRuntimeDiagnostic,
 	type AgentSessionServices,
@@ -24,10 +24,13 @@ export {
 	type CreateAgentSessionServicesOptions,
 	createAgentSessionFromServices,
 	createAgentSessionServices,
-} from "./agent-session-services.js";
-export { type BashExecutorOptions, type BashResult, executeBashWithOperations } from "./bash-executor.js";
-export type { CompactionResult } from "./compaction/index.js";
-export { createEventBus, type EventBus, type EventBusController } from "./event-bus.js";
+} from "@mariozechner/pi-agent-host/agent-session-services";
+export {
+	type BashExecutorOptions,
+	type BashResult,
+	executeBashWithOperations,
+} from "@mariozechner/pi-agent-host/bash-executor";
+export { createEventBus, type EventBus, type EventBusController } from "@mariozechner/pi-agent-host/event-bus";
 // Extensions system
 export {
 	type AgentEndEvent,
@@ -73,5 +76,6 @@ export {
 	type TurnEndEvent,
 	type TurnStartEvent,
 	type WorkingIndicatorOptions,
-} from "./extensions/index.js";
-export { createSyntheticSourceInfo } from "./source-info.js";
+} from "@mariozechner/pi-agent-host/extensions";
+export { createSyntheticSourceInfo } from "@mariozechner/pi-agent-host/source-info";
+export type { CompactionResult } from "./compaction/index.js";

@@ -2,11 +2,11 @@
  * One-time migrations that run on startup.
  */
 
+import { migrateKeybindingsConfig } from "@mariozechner/pi-agent-host/keybindings";
 import chalk from "chalk";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { CONFIG_DIR_NAME, getAgentDir, getBinDir } from "./config.js";
-import { migrateKeybindingsConfig } from "./core/keybindings.js";
 
 const MIGRATION_GUIDE_URL =
 	"https://github.com/badlogic/pi-mono/blob/main/packages/coding-agent/CHANGELOG.md#extensions-migration";

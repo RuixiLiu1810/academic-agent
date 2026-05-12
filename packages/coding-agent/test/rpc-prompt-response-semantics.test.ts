@@ -2,6 +2,12 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent } from "@mariozechner/pi-agent-core";
+import { AgentSession } from "@mariozechner/pi-agent-host/agent-session";
+import type { AgentSessionRuntime } from "@mariozechner/pi-agent-host/agent-session-runtime";
+import { AuthStorage } from "@mariozechner/pi-agent-host/auth-storage";
+import { ModelRegistry } from "@mariozechner/pi-agent-host/model-registry";
+import { SessionManager } from "@mariozechner/pi-agent-host/session-manager";
+import { SettingsManager } from "@mariozechner/pi-agent-host/settings-manager";
 import {
 	type AssistantMessage,
 	type AssistantMessageEvent,
@@ -10,12 +16,6 @@ import {
 	type Model,
 } from "@mariozechner/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AgentSession } from "../src/core/agent-session.js";
-import type { AgentSessionRuntime } from "../src/core/agent-session-runtime.js";
-import { AuthStorage } from "../src/core/auth-storage.js";
-import { ModelRegistry } from "../src/core/model-registry.js";
-import { SessionManager } from "../src/core/session-manager.js";
-import { SettingsManager } from "../src/core/settings-manager.js";
 import { runRpcMode } from "../src/modes/rpc/rpc-mode.js";
 import { createTestResourceLoader } from "./utilities.js";
 
@@ -24,7 +24,7 @@ const rpcIo = vi.hoisted(() => ({
 	lineHandler: undefined as ((line: string) => void) | undefined,
 }));
 
-vi.mock("../src/core/output-guard.js", () => ({
+vi.mock("@mariozechner/pi-agent-host/output-guard", () => ({
 	takeOverStdout: vi.fn(),
 	writeRawStdout: (line: string) => {
 		rpcIo.outputLines.push(line);

@@ -1,7 +1,7 @@
+import { KeybindingsManager } from "@mariozechner/pi-agent-host/keybindings";
+import type { SessionInfo } from "@mariozechner/pi-agent-host/session-manager";
 import { setKeybindings } from "@mariozechner/pi-tui";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { KeybindingsManager } from "../src/core/keybindings.js";
-import type { SessionInfo } from "../src/core/session-manager.js";
 import { SessionSelectorComponent } from "../src/modes/interactive/components/session-selector.js";
 import { initTheme } from "../src/modes/interactive/theme/theme.js";
 

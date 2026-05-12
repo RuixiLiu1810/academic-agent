@@ -13,27 +13,49 @@
 			"@mariozechner/pi-agent-contracts": ["./packages/agent-contracts/src/index.ts"],
 			"@mariozechner/pi-agent-contracts/*": ["./packages/agent-contracts/src/*"],
 			"@mariozechner/pi-agent-host": ["./packages/agent-host/src/index.ts"],
+			"@mariozechner/pi-agent-host/agent-session": ["./packages/agent-host/src/agent-session.ts"],
+			"@mariozechner/pi-agent-host/agent-session-runtime": [
+				"./packages/agent-host/src/agent-session-runtime.ts"
+			],
+			"@mariozechner/pi-agent-host/agent-session-services": [
+				"./packages/agent-host/src/agent-session-services.ts"
+			],
 			"@mariozechner/pi-agent-host/auth-storage": ["./packages/agent-host/src/auth-storage.ts"],
+			"@mariozechner/pi-agent-host/bash-executor": ["./packages/agent-host/src/bash-executor.ts"],
 			"@mariozechner/pi-agent-host/compaction": ["./packages/agent-host/src/compaction/index.ts"],
+			"@mariozechner/pi-agent-host/diagnostics": ["./packages/agent-host/src/diagnostics.ts"],
 			"@mariozechner/pi-agent-host/event-bus": ["./packages/agent-host/src/event-bus.ts"],
 			"@mariozechner/pi-agent-host/exec": ["./packages/agent-host/src/exec.ts"],
+			"@mariozechner/pi-agent-host/extensions": ["./packages/agent-host/src/extensions.ts"],
+			"@mariozechner/pi-agent-host/footer-data-provider": [
+				"./packages/agent-host/src/footer-data-provider.ts"
+			],
+			"@mariozechner/pi-agent-host/keybindings": ["./packages/agent-host/src/keybindings.ts"],
 			"@mariozechner/pi-agent-host/messages": ["./packages/agent-host/src/messages.ts"],
 			"@mariozechner/pi-agent-host/model-registry": ["./packages/agent-host/src/model-registry.ts"],
+			"@mariozechner/pi-agent-host/output-guard": ["./packages/agent-host/src/output-guard.ts"],
 			"@mariozechner/pi-agent-host/package-manager": ["./packages/agent-host/src/package-manager.ts"],
 			"@mariozechner/pi-agent-host/prompt-templates": ["./packages/agent-host/src/prompt-templates.ts"],
+			"@mariozechner/pi-agent-host/provider-display-names": [
+				"./packages/agent-host/src/provider-display-names.ts"
+			],
 			"@mariozechner/pi-agent-host/resource-loader": ["./packages/agent-host/src/resource-loader.ts"],
 			"@mariozechner/pi-agent-host/resolve-config-value": [
 				"./packages/agent-host/src/resolve-config-value.ts"
 			],
+			"@mariozechner/pi-agent-host/session-cwd": ["./packages/agent-host/src/session-cwd.ts"],
 			"@mariozechner/pi-agent-host/session-manager": ["./packages/agent-host/src/session-manager.ts"],
 			"@mariozechner/pi-agent-host/settings-manager": ["./packages/agent-host/src/settings-manager.ts"],
 			"@mariozechner/pi-agent-host/skills": ["./packages/agent-host/src/skills.ts"],
+			"@mariozechner/pi-agent-host/slash-commands": ["./packages/agent-host/src/slash-commands.ts"],
 			"@mariozechner/pi-agent-host/source-info": ["./packages/agent-host/src/source-info.ts"],
+			"@mariozechner/pi-agent-host/system-prompt": ["./packages/agent-host/src/system-prompt.ts"],
+			"@mariozechner/pi-agent-host/theme-loader": ["./packages/agent-host/src/theme-loader.ts"],
 			"@mariozechner/pi-agent-host/*": ["./packages/agent-host/src/*"],
 			"@mariozechner/pi-artifact-core": ["./packages/artifact-core/src/index.ts"],
 			"@mariozechner/pi-artifact-core/*": ["./packages/artifact-core/src/*"],
 			"@mariozechner/pi-coding-agent": ["./packages/coding-agent/src/index.ts"],
-			"@mariozechner/pi-coding-agent/hooks": ["./packages/coding-agent/src/core/hooks/index.ts"],
+			"@mariozechner/pi-coding-agent/worker": ["./packages/coding-agent/src/worker.ts"],
 			"@mariozechner/pi-coding-agent/*": ["./packages/coding-agent/src/*"],
 			"@mariozechner/pi-lead-agent": ["./packages/lead-agent/src/index.ts"],
 			"@mariozechner/pi-lead-agent/*": ["./packages/lead-agent/src/*"],

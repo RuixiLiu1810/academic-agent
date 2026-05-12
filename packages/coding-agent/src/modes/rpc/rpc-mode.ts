@@ -12,16 +12,17 @@
  */
 
 import * as crypto from "node:crypto";
-import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
+import type { AgentSessionRuntime } from "@mariozechner/pi-agent-host/agent-session-runtime";
 import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
+	Theme,
 	WorkingIndicatorOptions,
-} from "../../core/extensions/index.js";
-import { takeOverStdout, writeRawStdout } from "../../core/output-guard.js";
+} from "@mariozechner/pi-agent-host/extensions";
+import { takeOverStdout, writeRawStdout } from "@mariozechner/pi-agent-host/output-guard";
 import { killTrackedDetachedChildren } from "../../utils/shell.js";
-import { type Theme, theme } from "../interactive/theme/theme.js";
+import { theme } from "../interactive/theme/theme.js";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 import type {
 	RpcCommand,

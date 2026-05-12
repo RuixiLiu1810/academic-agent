@@ -131,6 +131,7 @@ export type {
 	SetModelHandler,
 	SetThinkingLevelHandler,
 	TerminalInputHandler,
+	Theme,
 	// Events - Tool
 	ToolCallEvent,
 	ToolCallEventResult,
@@ -143,6 +144,7 @@ export type {
 	ToolExecutionStartEvent,
 	ToolExecutionUpdateEvent,
 	ToolInfo,
+	ToolRenderContext,
 	ToolRenderResultOptions,
 	ToolResultEvent,
 	ToolResultEventResult,

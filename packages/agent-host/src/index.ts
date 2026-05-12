@@ -58,7 +58,7 @@ export type {
 } from "./extension-tool-types.js";
 export * from "./extensions.js";
 export { createExtensionRuntime } from "./extensions.js";
-export type { ReadonlyFooterDataProvider } from "./footer-data-provider.js";
+export { FooterDataProvider, type ReadonlyFooterDataProvider } from "./footer-data-provider.js";
 export {
 	type AppKeybinding,
 	type AppKeybindings,

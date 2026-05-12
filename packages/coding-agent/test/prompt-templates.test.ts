@@ -8,12 +8,12 @@
  * - Edge cases and integration between parsing and substitution
  */
 
+import { loadPromptTemplates, parseCommandArgs, substituteArgs } from "@mariozechner/pi-agent-host/prompt-templates";
 import { mkdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterAll, describe, expect, test } from "vitest";
 import { getAgentDir } from "../src/config.js";
-import { loadPromptTemplates, parseCommandArgs, substituteArgs } from "../src/core/prompt-templates.js";
 
 // ============================================================================
 // substituteArgs

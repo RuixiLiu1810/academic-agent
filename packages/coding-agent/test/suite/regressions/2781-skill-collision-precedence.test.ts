@@ -1,8 +1,8 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DefaultResourceLoader } from "@mariozechner/pi-agent-host/resource-loader";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DefaultResourceLoader } from "../../../src/core/resource-loader.js";
 
 describe("issue #2781 skill collision precedence: user skills should override package skills", () => {
 	let tempDir: string;

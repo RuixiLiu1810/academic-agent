@@ -1,4 +1,4 @@
-import type { SettingsManager } from "./settings-manager.js";
+import type { SettingsManager } from "@mariozechner/pi-agent-host/settings-manager";
 
 function isTruthyEnvFlag(value: string | undefined): boolean {
 	if (!value) return false;

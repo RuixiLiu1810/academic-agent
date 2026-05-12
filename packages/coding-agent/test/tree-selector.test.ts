@@ -1,12 +1,12 @@
-import { setKeybindings } from "@mariozechner/pi-tui";
-import { beforeAll, beforeEach, describe, expect, test } from "vitest";
-import { KeybindingsManager } from "../src/core/keybindings.js";
+import { KeybindingsManager } from "@mariozechner/pi-agent-host/keybindings";
 import type {
 	ModelChangeEntry,
 	SessionEntry,
 	SessionMessageEntry,
 	SessionTreeNode,
-} from "../src/core/session-manager.js";
+} from "@mariozechner/pi-agent-host/session-manager";
+import { setKeybindings } from "@mariozechner/pi-tui";
+import { beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { TreeSelectorComponent } from "../src/modes/interactive/components/tree-selector.js";
 import { initTheme } from "../src/modes/interactive/theme/theme.js";
 

@@ -7,6 +7,28 @@
 
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
+import {
+	type CreateAgentSessionRuntimeFactory,
+	createAgentSessionRuntime,
+} from "@mariozechner/pi-agent-host/agent-session-runtime";
+import {
+	type AgentSessionRuntimeDiagnostic,
+	createAgentSessionFromServices,
+	createAgentSessionServices,
+} from "@mariozechner/pi-agent-host/agent-session-services";
+import { AuthStorage } from "@mariozechner/pi-agent-host/auth-storage";
+import type { ExtensionFactory } from "@mariozechner/pi-agent-host/extensions";
+import { KeybindingsManager } from "@mariozechner/pi-agent-host/keybindings";
+import type { ModelRegistry } from "@mariozechner/pi-agent-host/model-registry";
+import { restoreStdout, takeOverStdout } from "@mariozechner/pi-agent-host/output-guard";
+import {
+	formatMissingSessionCwdPrompt,
+	getMissingSessionCwdIssue,
+	MissingSessionCwdError,
+	type SessionCwdIssue,
+} from "@mariozechner/pi-agent-host/session-cwd";
+import { SessionManager } from "@mariozechner/pi-agent-host/session-manager";
+import { SettingsManager } from "@mariozechner/pi-agent-host/settings-manager";
 import { type ImageContent, modelsAreEqual } from "@mariozechner/pi-ai";
 import { ProcessTerminal, setKeybindings, TUI } from "@mariozechner/pi-tui";
 import chalk from "chalk";
@@ -16,29 +38,10 @@ import { buildInitialMessage } from "./cli/initial-message.js";
 import { listModels } from "./cli/list-models.js";
 import { selectSession } from "./cli/session-picker.js";
 import { ENV_SESSION_DIR, expandTildePath, getAgentDir, VERSION } from "./config.js";
-import { type CreateAgentSessionRuntimeFactory, createAgentSessionRuntime } from "./core/agent-session-runtime.js";
-import {
-	type AgentSessionRuntimeDiagnostic,
-	createAgentSessionFromServices,
-	createAgentSessionServices,
-} from "./core/agent-session-services.js";
 import { formatNoModelsAvailableMessage } from "./core/auth-guidance.js";
-import { AuthStorage } from "./core/auth-storage.js";
 import { exportFromFile } from "./core/export-html/index.js";
-import type { ExtensionFactory } from "./core/extensions/types.js";
-import { KeybindingsManager } from "./core/keybindings.js";
-import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
-import { restoreStdout, takeOverStdout } from "./core/output-guard.js";
 import type { CreateAgentSessionOptions } from "./core/sdk.js";
-import {
-	formatMissingSessionCwdPrompt,
-	getMissingSessionCwdIssue,
-	MissingSessionCwdError,
-	type SessionCwdIssue,
-} from "./core/session-cwd.js";
-import { SessionManager } from "./core/session-manager.js";
-import { SettingsManager } from "./core/settings-manager.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";

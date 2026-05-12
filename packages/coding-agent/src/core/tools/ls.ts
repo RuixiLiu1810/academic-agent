@@ -1,10 +1,10 @@
 import type { AgentTool } from "@mariozechner/pi-agent-core";
+import type { Theme, ToolDefinition, ToolRenderResultOptions } from "@mariozechner/pi-agent-host/extensions";
 import { Text } from "@mariozechner/pi-tui";
 import { existsSync, readdirSync, statSync } from "fs";
 import nodePath from "path";
 import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
-import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { resolveToCwd } from "./path-utils.js";
 import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
@@ -48,10 +48,7 @@ export interface LsToolOptions {
 	operations?: LsOperations;
 }
 
-function formatLsCall(
-	args: { path?: string; limit?: number } | undefined,
-	theme: typeof import("../../modes/interactive/theme/theme.js").theme,
-): string {
+function formatLsCall(args: { path?: string; limit?: number } | undefined, theme: Theme): string {
 	const rawPath = str(args?.path);
 	const path = rawPath !== null ? shortenPath(rawPath || ".") : null;
 	const limit = args?.limit;
@@ -69,7 +66,7 @@ function formatLsResult(
 		details?: LsToolDetails;
 	},
 	options: ToolRenderResultOptions,
-	theme: typeof import("../../modes/interactive/theme/theme.js").theme,
+	theme: Theme,
 	showImages: boolean,
 ): string {
 	const output = getTextOutput(result, showImages).trim();

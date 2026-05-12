@@ -11,9 +11,9 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DefaultPackageManager } from "@mariozechner/pi-agent-host/package-manager";
+import { SettingsManager } from "@mariozechner/pi-agent-host/settings-manager";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DefaultPackageManager } from "../src/core/package-manager.js";
-import { SettingsManager } from "../src/core/settings-manager.js";
 
 // Helper to run git commands in a directory
 function git(args: string[], cwd: string): string {

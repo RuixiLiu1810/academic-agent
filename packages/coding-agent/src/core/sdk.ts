@@ -1,22 +1,31 @@
 import { join } from "node:path";
-import { Agent, type AgentMessage, type ThinkingLevel } from "@mariozechner/pi-agent-core";
-import { clampThinkingLevel, type Message, type Model, streamSimple } from "@mariozechner/pi-ai";
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import {
+	type AgentHostSession as AgentSession,
+	AuthStorage,
+	createAgentHostSessionFromServices,
+	DefaultResourceLoader,
+	getDefaultSessionDir,
+	type LoadExtensionsResult,
+	ModelRegistry,
+	type ResourceLoader,
+	SessionManager,
+	type SessionStartEvent,
+	SettingsManager,
+	type ToolDefinition,
+} from "@mariozechner/pi-agent-host";
+import { clampThinkingLevel, type Model } from "@mariozechner/pi-ai";
 import { getAgentDir } from "../config.js";
-import { AgentSession } from "./agent-session.js";
+import { theme } from "../modes/interactive/theme/theme.js";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.js";
-import { AuthStorage } from "./auth-storage.js";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
-import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.js";
-import { convertToLlm } from "./messages.js";
-import { ModelRegistry } from "./model-registry.js";
+import { exportSessionToHtml } from "./export-html/index.js";
+import { createToolHtmlRenderer } from "./export-html/tool-renderer.js";
 import { findInitialModel } from "./model-resolver.js";
-import type { ResourceLoader } from "./resource-loader.js";
-import { DefaultResourceLoader } from "./resource-loader.js";
-import { getDefaultSessionDir, SessionManager } from "./session-manager.js";
-import { SettingsManager } from "./settings-manager.js";
 import { isInstallTelemetryEnabled } from "./telemetry.js";
 import { time } from "./timings.js";
 import {
+	createAllToolDefinitions,
 	createBashTool,
 	createCodingTools,
 	createEditTool,
@@ -91,7 +100,7 @@ export interface CreateAgentSessionResult {
 
 // Re-exports
 
-export * from "./agent-session-runtime.js";
+export * from "@mariozechner/pi-agent-host/agent-session-runtime";
 export type {
 	ExtensionAPI,
 	ExtensionCommandContext,
@@ -100,9 +109,9 @@ export type {
 	SlashCommandInfo,
 	SlashCommandSource,
 	ToolDefinition,
-} from "./extensions/index.js";
-export type { PromptTemplate } from "./prompt-templates.js";
-export type { Skill } from "./skills.js";
+} from "@mariozechner/pi-agent-host/extensions";
+export type { PromptTemplate } from "@mariozechner/pi-agent-host/prompt-templates";
+export type { Skill } from "@mariozechner/pi-agent-host/skills";
 export type { Tool } from "./tools/index.js";
 
 export {
@@ -276,138 +285,42 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 			? []
 			: defaultActiveToolNames;
 
-	let agent: Agent;
-
-	// Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)
-	const convertToLlmWithBlockImages = (messages: AgentMessage[]): Message[] => {
-		const converted = convertToLlm(messages);
-		// Check setting dynamically so mid-session changes take effect
-		if (!settingsManager.getBlockImages()) {
-			return converted;
-		}
-		// Filter out ImageContent from all messages, replacing with text placeholder
-		return converted.map((msg) => {
-			if (msg.role === "user" || msg.role === "toolResult") {
-				const content = msg.content;
-				if (Array.isArray(content)) {
-					const hasImages = content.some((c) => c.type === "image");
-					if (hasImages) {
-						const filteredContent = content
-							.map((c) =>
-								c.type === "image" ? { type: "text" as const, text: "Image reading is disabled." } : c,
-							)
-							.filter(
-								(c, i, arr) =>
-									// Dedupe consecutive "Image reading is disabled." texts
-									!(
-										c.type === "text" &&
-										c.text === "Image reading is disabled." &&
-										i > 0 &&
-										arr[i - 1].type === "text" &&
-										(arr[i - 1] as { type: "text"; text: string }).text === "Image reading is disabled."
-									),
-							);
-						return { ...msg, content: filteredContent };
-					}
-				}
-			}
-			return msg;
-		});
-	};
-
-	const extensionRunnerRef: { current?: ExtensionRunner } = {};
-
-	agent = new Agent({
-		initialState: {
-			systemPrompt: "",
-			model,
-			thinkingLevel,
-			tools: [],
+	const result = await createAgentHostSessionFromServices({
+		services: {
+			cwd,
+			agentDir,
+			authStorage,
+			settingsManager,
+			modelRegistry,
+			resourceLoader,
+			diagnostics: [],
 		},
-		convertToLlm: convertToLlmWithBlockImages,
-		streamFn: async (model, context, options) => {
-			const auth = await modelRegistry.getApiKeyAndHeaders(model);
-			if (!auth.ok) {
-				throw new Error(auth.error);
-			}
-			const providerRetrySettings = settingsManager.getProviderRetrySettings();
-			const attributionHeaders = getAttributionHeaders(model, settingsManager);
-			return streamSimple(model, context, {
-				...options,
-				apiKey: auth.apiKey,
-				timeoutMs: options?.timeoutMs ?? providerRetrySettings.timeoutMs,
-				maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
-				maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
-				headers:
-					attributionHeaders || auth.headers || options?.headers
-						? { ...attributionHeaders, ...auth.headers, ...options?.headers }
-						: undefined,
-			});
-		},
-		onPayload: async (payload, _model) => {
-			const runner = extensionRunnerRef.current;
-			if (!runner?.hasHandlers("before_provider_request")) {
-				return payload;
-			}
-			return runner.emitBeforeProviderRequest(payload);
-		},
-		onResponse: async (response, _model) => {
-			const runner = extensionRunnerRef.current;
-			if (!runner?.hasHandlers("after_provider_response")) {
-				return;
-			}
-			await runner.emit({
-				type: "after_provider_response",
-				status: response.status,
-				headers: response.headers,
-			});
-		},
-		sessionId: sessionManager.getSessionId(),
-		transformContext: async (messages) => {
-			const runner = extensionRunnerRef.current;
-			if (!runner) return messages;
-			return runner.emitContext(messages);
-		},
-		steeringMode: settingsManager.getSteeringMode(),
-		followUpMode: settingsManager.getFollowUpMode(),
-		transport: settingsManager.getTransport(),
-		thinkingBudgets: settingsManager.getThinkingBudgets(),
-		maxRetryDelayMs: settingsManager.getProviderRetrySettings().maxRetryDelayMs,
-	});
-
-	// Restore messages if session has existing data
-	if (hasExistingSession) {
-		agent.state.messages = existingSession.messages;
-		if (!hasThinkingEntry) {
-			sessionManager.appendThinkingLevelChange(thinkingLevel);
-		}
-	} else {
-		// Save initial model and thinking level for new sessions so they can be restored on resume
-		if (model) {
-			sessionManager.appendModelChange(model.provider, model.id);
-		}
-		sessionManager.appendThinkingLevelChange(thinkingLevel);
-	}
-
-	const session = new AgentSession({
-		agent,
 		sessionManager,
-		settingsManager,
-		cwd,
+		sessionStartEvent: options.sessionStartEvent,
+		model,
+		thinkingLevel,
 		scopedModels: options.scopedModels,
-		resourceLoader,
+		tools: options.tools,
+		noTools: options.noTools,
 		customTools: options.customTools,
-		modelRegistry,
 		initialActiveToolNames,
 		allowedToolNames,
-		extensionRunnerRef,
-		sessionStartEvent: options.sessionStartEvent,
+		baseToolDefinitionsOverride: createAllToolDefinitions(cwd),
+		requestHeadersProvider: getAttributionHeaders,
+		htmlExporter: (targetSessionManager, state, exportOptions) =>
+			exportSessionToHtml(targetSessionManager, state, {
+				outputPath: exportOptions.outputPath,
+				themeName: exportOptions.themeName,
+				toolRenderer: createToolHtmlRenderer({
+					getToolDefinition: exportOptions.getToolDefinition,
+					theme,
+					cwd: exportOptions.cwd,
+				}),
+			}),
 	});
-	const extensionsResult = resourceLoader.getExtensions();
 
 	return {
-		session,
-		extensionsResult,
-		modelFallbackMessage,
+		...result,
+		modelFallbackMessage: modelFallbackMessage ?? result.modelFallbackMessage,
 	};
 }

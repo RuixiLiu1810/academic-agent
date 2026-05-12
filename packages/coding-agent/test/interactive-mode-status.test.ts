@@ -1,9 +1,9 @@
 import { homedir } from "node:os";
 import * as path from "node:path";
+import type { AutocompleteProviderFactory } from "@mariozechner/pi-agent-host/extensions";
+import type { SourceInfo } from "@mariozechner/pi-agent-host/source-info";
 import { type AutocompleteProvider, CombinedAutocompleteProvider, Container } from "@mariozechner/pi-tui";
 import { beforeAll, describe, expect, test, vi } from "vitest";
-import type { AutocompleteProviderFactory } from "../src/core/extensions/types.js";
-import type { SourceInfo } from "../src/core/source-info.js";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.js";
 import { initTheme } from "../src/modes/interactive/theme/theme.js";
 

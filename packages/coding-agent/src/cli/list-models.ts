@@ -2,11 +2,11 @@
  * List available models with optional fuzzy search
  */
 
+import type { ModelRegistry } from "@mariozechner/pi-agent-host/model-registry";
 import type { Api, Model } from "@mariozechner/pi-ai";
 import { fuzzyFilter } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 import { formatNoModelsAvailableMessage } from "../core/auth-guidance.js";
-import type { ModelRegistry } from "../core/model-registry.js";
 
 /**
  * Format a number as human-readable (e.g., 200000 -> "200K", 1000000 -> "1M")

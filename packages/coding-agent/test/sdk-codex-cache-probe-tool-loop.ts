@@ -11,6 +11,13 @@ import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import process from "node:process";
+import { AuthStorage } from "@mariozechner/pi-agent-host/auth-storage";
+import type { ToolDefinition } from "@mariozechner/pi-agent-host/extensions";
+import { createExtensionRuntime } from "@mariozechner/pi-agent-host/extensions";
+import { ModelRegistry } from "@mariozechner/pi-agent-host/model-registry";
+import type { ResourceLoader } from "@mariozechner/pi-agent-host/resource-loader";
+import { SessionManager } from "@mariozechner/pi-agent-host/session-manager";
+import { SettingsManager } from "@mariozechner/pi-agent-host/settings-manager";
 import {
 	type Api,
 	type AssistantMessage,
@@ -25,14 +32,7 @@ import {
 	getOpenAICodexWebSocketDebugStats,
 	streamSimpleOpenAICodexResponses,
 } from "../../ai/src/providers/openai-codex-responses.js";
-import { AuthStorage } from "../src/core/auth-storage.js";
-import { createExtensionRuntime } from "../src/core/extensions/loader.js";
-import type { ToolDefinition } from "../src/core/extensions/types.js";
-import { ModelRegistry } from "../src/core/model-registry.js";
-import type { ResourceLoader } from "../src/core/resource-loader.js";
 import { createAgentSession } from "../src/core/sdk.js";
-import { SessionManager } from "../src/core/session-manager.js";
-import { SettingsManager } from "../src/core/settings-manager.js";
 
 type Transport = "sse" | "websocket" | "websocket-cached" | "auto";
 

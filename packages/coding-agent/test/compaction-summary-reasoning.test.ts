@@ -1,7 +1,7 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import { generateSummary } from "@mariozechner/pi-agent-host/compaction";
 import type { AssistantMessage, Model } from "@mariozechner/pi-ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { generateSummary } from "../src/core/compaction/index.js";
 
 const { completeSimpleMock } = vi.hoisted(() => ({
 	completeSimpleMock: vi.fn(),

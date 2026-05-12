@@ -1,13 +1,16 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { EditorTheme, MarkdownTheme, SelectListTheme } from "@mariozechner/pi-tui";
+import { Theme, type ThemeBg, type ThemeColor } from "@mariozechner/pi-agent-host/theme-loader";
+import type { EditorTheme, MarkdownTheme, SelectListTheme, SettingsListTheme } from "@mariozechner/pi-tui";
 import chalk from "chalk";
 import { highlight, supportsLanguage } from "cli-highlight";
 import { type Static, Type } from "typebox";
 import { Compile } from "typebox/compile";
 import { getCustomThemesDir, getThemesDir } from "../../../config.js";
-import type { SourceInfo } from "../../../core/source-info.js";
 import { closeWatcher, watchWithErrorHandler } from "../../../utils/fs-watch.js";
+
+export { Theme };
+export type { ThemeBg, ThemeColor };
 
 // ============================================================================
 // Types & Schema
@@ -97,61 +100,6 @@ type ThemeJson = Static<typeof ThemeJsonSchema>;
 
 const validateThemeJson = Compile(ThemeJsonSchema);
 
-export type ThemeColor =
-	| "accent"
-	| "border"
-	| "borderAccent"
-	| "borderMuted"
-	| "success"
-	| "error"
-	| "warning"
-	| "muted"
-	| "dim"
-	| "text"
-	| "thinkingText"
-	| "userMessageText"
-	| "customMessageText"
-	| "customMessageLabel"
-	| "toolTitle"
-	| "toolOutput"
-	| "mdHeading"
-	| "mdLink"
-	| "mdLinkUrl"
-	| "mdCode"
-	| "mdCodeBlock"
-	| "mdCodeBlockBorder"
-	| "mdQuote"
-	| "mdQuoteBorder"
-	| "mdHr"
-	| "mdListBullet"
-	| "toolDiffAdded"
-	| "toolDiffRemoved"
-	| "toolDiffContext"
-	| "syntaxComment"
-	| "syntaxKeyword"
-	| "syntaxFunction"
-	| "syntaxVariable"
-	| "syntaxString"
-	| "syntaxNumber"
-	| "syntaxType"
-	| "syntaxOperator"
-	| "syntaxPunctuation"
-	| "thinkingOff"
-	| "thinkingMinimal"
-	| "thinkingLow"
-	| "thinkingMedium"
-	| "thinkingHigh"
-	| "thinkingXhigh"
-	| "bashMode";
-
-export type ThemeBg =
-	| "selectedBg"
-	| "userMessageBg"
-	| "customMessageBg"
-	| "toolPendingBg"
-	| "toolSuccessBg"
-	| "toolErrorBg";
-
 type ColorMode = "truecolor" | "256color";
 
 // ============================================================================
@@ -185,128 +133,6 @@ function detectColorMode(): ColorMode {
 	return "truecolor";
 }
 
-function hexToRgb(hex: string): { r: number; g: number; b: number } {
-	const cleaned = hex.replace("#", "");
-	if (cleaned.length !== 6) {
-		throw new Error(`Invalid hex color: ${hex}`);
-	}
-	const r = parseInt(cleaned.substring(0, 2), 16);
-	const g = parseInt(cleaned.substring(2, 4), 16);
-	const b = parseInt(cleaned.substring(4, 6), 16);
-	if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) {
-		throw new Error(`Invalid hex color: ${hex}`);
-	}
-	return { r, g, b };
-}
-
-// The 6x6x6 color cube channel values (indices 0-5)
-const CUBE_VALUES = [0, 95, 135, 175, 215, 255];
-
-// Grayscale ramp values (indices 232-255, 24 grays from 8 to 238)
-const GRAY_VALUES = Array.from({ length: 24 }, (_, i) => 8 + i * 10);
-
-function findClosestCubeIndex(value: number): number {
-	let minDist = Infinity;
-	let minIdx = 0;
-	for (let i = 0; i < CUBE_VALUES.length; i++) {
-		const dist = Math.abs(value - CUBE_VALUES[i]);
-		if (dist < minDist) {
-			minDist = dist;
-			minIdx = i;
-		}
-	}
-	return minIdx;
-}
-
-function findClosestGrayIndex(gray: number): number {
-	let minDist = Infinity;
-	let minIdx = 0;
-	for (let i = 0; i < GRAY_VALUES.length; i++) {
-		const dist = Math.abs(gray - GRAY_VALUES[i]);
-		if (dist < minDist) {
-			minDist = dist;
-			minIdx = i;
-		}
-	}
-	return minIdx;
-}
-
-function colorDistance(r1: number, g1: number, b1: number, r2: number, g2: number, b2: number): number {
-	// Weighted Euclidean distance (human eye is more sensitive to green)
-	const dr = r1 - r2;
-	const dg = g1 - g2;
-	const db = b1 - b2;
-	return dr * dr * 0.299 + dg * dg * 0.587 + db * db * 0.114;
-}
-
-function rgbTo256(r: number, g: number, b: number): number {
-	// Find closest color in the 6x6x6 cube
-	const rIdx = findClosestCubeIndex(r);
-	const gIdx = findClosestCubeIndex(g);
-	const bIdx = findClosestCubeIndex(b);
-	const cubeR = CUBE_VALUES[rIdx];
-	const cubeG = CUBE_VALUES[gIdx];
-	const cubeB = CUBE_VALUES[bIdx];
-	const cubeIndex = 16 + 36 * rIdx + 6 * gIdx + bIdx;
-	const cubeDist = colorDistance(r, g, b, cubeR, cubeG, cubeB);
-
-	// Find closest grayscale
-	const gray = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
-	const grayIdx = findClosestGrayIndex(gray);
-	const grayValue = GRAY_VALUES[grayIdx];
-	const grayIndex = 232 + grayIdx;
-	const grayDist = colorDistance(r, g, b, grayValue, grayValue, grayValue);
-
-	// Check if color has noticeable saturation (hue matters)
-	// If max-min spread is significant, prefer cube to preserve tint
-	const maxC = Math.max(r, g, b);
-	const minC = Math.min(r, g, b);
-	const spread = maxC - minC;
-
-	// Only consider grayscale if color is nearly neutral (spread < 10)
-	// AND grayscale is actually closer
-	if (spread < 10 && grayDist < cubeDist) {
-		return grayIndex;
-	}
-
-	return cubeIndex;
-}
-
-function hexTo256(hex: string): number {
-	const { r, g, b } = hexToRgb(hex);
-	return rgbTo256(r, g, b);
-}
-
-function fgAnsi(color: string | number, mode: ColorMode): string {
-	if (color === "") return "\x1b[39m";
-	if (typeof color === "number") return `\x1b[38;5;${color}m`;
-	if (color.startsWith("#")) {
-		if (mode === "truecolor") {
-			const { r, g, b } = hexToRgb(color);
-			return `\x1b[38;2;${r};${g};${b}m`;
-		} else {
-			const index = hexTo256(color);
-			return `\x1b[38;5;${index}m`;
-		}
-	}
-	throw new Error(`Invalid color value: ${color}`);
-}
-
-function bgAnsi(color: string | number, mode: ColorMode): string {
-	if (color === "") return "\x1b[49m";
-	if (typeof color === "number") return `\x1b[48;5;${color}m`;
-	if (color.startsWith("#")) {
-		if (mode === "truecolor") {
-			const { r, g, b } = hexToRgb(color);
-			return `\x1b[48;2;${r};${g};${b}m`;
-		} else {
-			const index = hexTo256(color);
-			return `\x1b[48;5;${index}m`;
-		}
-	}
-	throw new Error(`Invalid color value: ${color}`);
-}
-
 function resolveVarRefs(
 	value: ColorValue,
 	vars: Record<string, ColorValue>,
@@ -334,111 +160,6 @@ function resolveThemeColors<T extends Record<string, ColorValue>>(
 		resolved[key] = resolveVarRefs(value, vars);
 	}
 	return resolved as Record<keyof T, string | number>;
-}
-
-// ============================================================================
-// Theme Class
-// ============================================================================
-
-export class Theme {
-	readonly name?: string;
-	readonly sourcePath?: string;
-	sourceInfo?: SourceInfo;
-	private fgColors: Map<ThemeColor, string>;
-	private bgColors: Map<ThemeBg, string>;
-	private mode: ColorMode;
-
-	constructor(
-		fgColors: Record<ThemeColor, string | number>,
-		bgColors: Record<ThemeBg, string | number>,
-		mode: ColorMode,
-		options: { name?: string; sourcePath?: string; sourceInfo?: SourceInfo } = {},
-	) {
-		this.name = options.name;
-		this.sourcePath = options.sourcePath;
-		this.sourceInfo = options.sourceInfo;
-		this.mode = mode;
-		this.fgColors = new Map();
-		for (const [key, value] of Object.entries(fgColors) as [ThemeColor, string | number][]) {
-			this.fgColors.set(key, fgAnsi(value, mode));
-		}
-		this.bgColors = new Map();
-		for (const [key, value] of Object.entries(bgColors) as [ThemeBg, string | number][]) {
-			this.bgColors.set(key, bgAnsi(value, mode));
-		}
-	}
-
-	fg(color: ThemeColor, text: string): string {
-		const ansi = this.fgColors.get(color);
-		if (!ansi) throw new Error(`Unknown theme color: ${color}`);
-		return `${ansi}${text}\x1b[39m`; // Reset only foreground color
-	}
-
-	bg(color: ThemeBg, text: string): string {
-		const ansi = this.bgColors.get(color);
-		if (!ansi) throw new Error(`Unknown theme background color: ${color}`);
-		return `${ansi}${text}\x1b[49m`; // Reset only background color
-	}
-
-	bold(text: string): string {
-		return chalk.bold(text);
-	}
-
-	italic(text: string): string {
-		return chalk.italic(text);
-	}
-
-	underline(text: string): string {
-		return chalk.underline(text);
-	}
-
-	inverse(text: string): string {
-		return chalk.inverse(text);
-	}
-
-	strikethrough(text: string): string {
-		return chalk.strikethrough(text);
-	}
-
-	getFgAnsi(color: ThemeColor): string {
-		const ansi = this.fgColors.get(color);
-		if (!ansi) throw new Error(`Unknown theme color: ${color}`);
-		return ansi;
-	}
-
-	getBgAnsi(color: ThemeBg): string {
-		const ansi = this.bgColors.get(color);
-		if (!ansi) throw new Error(`Unknown theme background color: ${color}`);
-		return ansi;
-	}
-
-	getColorMode(): ColorMode {
-		return this.mode;
-	}
-
-	getThinkingBorderColor(level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh"): (str: string) => string {
-		// Map thinking levels to dedicated theme colors
-		switch (level) {
-			case "off":
-				return (str: string) => this.fg("thinkingOff", str);
-			case "minimal":
-				return (str: string) => this.fg("thinkingMinimal", str);
-			case "low":
-				return (str: string) => this.fg("thinkingLow", str);
-			case "medium":
-				return (str: string) => this.fg("thinkingMedium", str);
-			case "high":
-				return (str: string) => this.fg("thinkingHigh", str);
-			case "xhigh":
-				return (str: string) => this.fg("thinkingXhigh", str);
-			default:
-				return (str: string) => this.fg("thinkingOff", str);
-		}
-	}
-
-	getBashModeBorderColor(): (str: string) => string {
-		return (str: string) => this.fg("bashMode", str);
-	}
 }
 
 // ============================================================================
@@ -1130,7 +851,7 @@ export function getEditorTheme(): EditorTheme {
 	};
 }
 
-export function getSettingsListTheme(): import("@mariozechner/pi-tui").SettingsListTheme {
+export function getSettingsListTheme(): SettingsListTheme {
 	return {
 		label: (text: string, selected: boolean) => (selected ? theme.fg("accent", text) : text),
 		value: (text: string, selected: boolean) => (selected ? theme.fg("accent", text) : theme.fg("muted", text)),

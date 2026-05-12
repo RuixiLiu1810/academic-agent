@@ -3,6 +3,8 @@
  */
 
 import { basename, dirname, join, relative } from "node:path";
+import type { PathMetadata, ResolvedPaths, ResolvedResource } from "@mariozechner/pi-agent-host/package-manager";
+import type { PackageSource, SettingsManager } from "@mariozechner/pi-agent-host/settings-manager";
 import {
 	type Component,
 	Container,
@@ -15,8 +17,6 @@ import {
 	visibleWidth,
 } from "@mariozechner/pi-tui";
 import { CONFIG_DIR_NAME } from "../../../config.js";
-import type { PathMetadata, ResolvedPaths, ResolvedResource } from "../../../core/package-manager.js";
-import type { PackageSource, SettingsManager } from "../../../core/settings-manager.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { rawKeyHint } from "./keybinding-hints.js";

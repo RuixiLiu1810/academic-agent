@@ -1,5 +1,5 @@
+import { type FileEntry, migrateSessionEntries } from "@mariozechner/pi-agent-host/session-manager";
 import { describe, expect, it } from "vitest";
-import { type FileEntry, migrateSessionEntries } from "../../src/core/session-manager.js";
 
 describe("migrateSessionEntries", () => {
 	it("should add id/parentId to v1 entries", () => {

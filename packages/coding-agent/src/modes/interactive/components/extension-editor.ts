@@ -7,6 +7,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import type { KeybindingsManager } from "@mariozechner/pi-agent-host/keybindings";
 import {
 	Container,
 	Editor,
@@ -17,7 +18,6 @@ import {
 	Text,
 	type TUI,
 } from "@mariozechner/pi-tui";
-import type { KeybindingsManager } from "../../../core/keybindings.js";
 import { getEditorTheme, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint } from "./keybinding-hints.js";

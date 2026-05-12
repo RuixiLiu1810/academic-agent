@@ -1,3 +1,4 @@
+import type { SessionTreeNode } from "@mariozechner/pi-agent-host/session-manager";
 import {
 	type Component,
 	Container,
@@ -9,7 +10,6 @@ import {
 	TruncatedText,
 	truncateToWidth,
 } from "@mariozechner/pi-tui";
-import type { SessionTreeNode } from "../../../core/session-manager.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint, keyText } from "./keybinding-hints.js";

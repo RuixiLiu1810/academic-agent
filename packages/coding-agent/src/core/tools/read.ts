@@ -1,5 +1,6 @@
 import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } from "node:path";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
+import type { Theme, ToolDefinition, ToolRenderResultOptions } from "@mariozechner/pi-agent-host/extensions";
 import type { Api, ImageContent, Model, TextContent } from "@mariozechner/pi-ai";
 import { Text } from "@mariozechner/pi-tui";
 import { constants } from "fs";
@@ -7,10 +8,9 @@ import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
 import { type Static, Type } from "typebox";
 import { getReadmePath } from "../../config.js";
 import { keyHint, keyText } from "../../modes/interactive/components/keybinding-hints.js";
-import { getLanguageFromPath, highlightCode, type Theme } from "../../modes/interactive/theme/theme.js";
+import { getLanguageFromPath, highlightCode } from "../../modes/interactive/theme/theme.js";
 import { formatDimensionNote, resizeImage } from "../../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
-import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { resolveReadPath } from "./path-utils.js";
 import { getTextOutput, invalidArgText, replaceTabs, shortenPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";

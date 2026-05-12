@@ -5,14 +5,17 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { AuthStorage } from "@mariozechner/pi-agent-host/auth-storage";
+import type { ExtensionActions, ExtensionContextActions, ProviderConfig } from "@mariozechner/pi-agent-host/extensions";
+import {
+	createExtensionRuntime,
+	discoverAndLoadExtensions,
+	ExtensionRunner,
+} from "@mariozechner/pi-agent-host/extensions";
+import { KeybindingsManager, type KeyId } from "@mariozechner/pi-agent-host/keybindings";
+import { ModelRegistry } from "@mariozechner/pi-agent-host/model-registry";
+import { SessionManager } from "@mariozechner/pi-agent-host/session-manager";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.js";
-import { createExtensionRuntime, discoverAndLoadExtensions } from "../src/core/extensions/loader.js";
-import { ExtensionRunner } from "../src/core/extensions/runner.js";
-import type { ExtensionActions, ExtensionContextActions, ProviderConfig } from "../src/core/extensions/types.js";
-import { KeybindingsManager, type KeyId } from "../src/core/keybindings.js";
-import { ModelRegistry } from "../src/core/model-registry.js";
-import { SessionManager } from "../src/core/session-manager.js";
 
 describe("ExtensionRunner", () => {
 	let tempDir: string;

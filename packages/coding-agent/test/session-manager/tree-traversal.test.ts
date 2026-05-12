@@ -1,8 +1,8 @@
+import { type CustomEntry, SessionManager } from "@mariozechner/pi-agent-host/session-manager";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { describe, expect, it } from "vitest";
-import { type CustomEntry, SessionManager } from "../../src/core/session-manager.js";
 import { assistantMsg, userMsg } from "../utilities.js";
 
 describe("SessionManager append and tree traversal", () => {

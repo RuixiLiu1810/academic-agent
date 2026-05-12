@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
+import type { ToolDefinition, ToolRenderResultOptions } from "@mariozechner/pi-agent-host/extensions";
 import { Container, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import { spawn } from "child_process";
 import { type Static, Type } from "typebox";
@@ -14,7 +15,6 @@ import {
 	trackDetachedChildPid,
 	untrackDetachedChildPid,
 } from "../../utils/shell.js";
-import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { OutputAccumulator } from "./output-accumulator.js";
 import { getTextOutput, invalidArgText, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";

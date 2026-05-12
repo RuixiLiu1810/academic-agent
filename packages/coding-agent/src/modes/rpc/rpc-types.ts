@@ -6,11 +6,11 @@
  */
 
 import type { AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { SessionStats } from "@mariozechner/pi-agent-host/agent-session";
+import type { BashResult } from "@mariozechner/pi-agent-host/bash-executor";
+import type { CompactionResult } from "@mariozechner/pi-agent-host/compaction";
+import type { SourceInfo } from "@mariozechner/pi-agent-host/source-info";
 import type { ImageContent, Model } from "@mariozechner/pi-ai";
-import type { SessionStats } from "../../core/agent-session.js";
-import type { BashResult } from "../../core/bash-executor.js";
-import type { CompactionResult } from "../../core/compaction/index.js";
-import type { SourceInfo } from "../../core/source-info.js";
 
 // ============================================================================
 // RPC Commands (stdin)

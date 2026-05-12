@@ -1,9 +1,9 @@
+import type { ResourceDiagnostic } from "@mariozechner/pi-agent-host/diagnostics";
+import { formatSkillsForPrompt, loadSkills, loadSkillsFromDir, type Skill } from "@mariozechner/pi-agent-host/skills";
+import { createSyntheticSourceInfo } from "@mariozechner/pi-agent-host/source-info";
 import { homedir } from "os";
 import { join, resolve } from "path";
 import { describe, expect, it } from "vitest";
-import type { ResourceDiagnostic } from "../src/core/diagnostics.js";
-import { formatSkillsForPrompt, loadSkills, loadSkillsFromDir, type Skill } from "../src/core/skills.js";
-import { createSyntheticSourceInfo } from "../src/core/source-info.js";
 
 const fixturesDir = resolve(__dirname, "fixtures/skills");
 const collisionFixturesDir = resolve(__dirname, "fixtures/skills-collision");

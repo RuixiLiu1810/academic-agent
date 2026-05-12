@@ -1,7 +1,7 @@
 import { join } from "node:path";
-import { Agent, type AgentMessage, type ThinkingLevel } from "@mariozechner/pi-agent-core";
+import { Agent, type AgentMessage, type AgentTool, type ThinkingLevel } from "@mariozechner/pi-agent-core";
 import { clampThinkingLevel, type Message, type Model, streamSimple } from "@mariozechner/pi-ai";
-import { AgentSession } from "./agent-session.js";
+import { AgentSession, type AgentSessionConfig } from "./agent-session.js";
 import { formatNoModelSelectedMessage } from "./auth-guidance.js";
 import { AuthStorage } from "./auth-storage.js";
 import { getAgentDir } from "./config.js";
@@ -38,6 +38,13 @@ export interface CreateAgentSessionFromServicesOptions {
 	tools?: string[];
 	noTools?: "all" | "builtin";
 	customTools?: ToolDefinition[];
+	initialActiveToolNames?: string[];
+	allowedToolNames?: string[];
+	baseToolDefinitionsOverride?: Record<string, ToolDefinition>;
+	baseToolsOverride?: Record<string, AgentTool>;
+	createDefaultBashOperations?: AgentSessionConfig["createDefaultBashOperations"];
+	htmlExporter?: AgentSessionConfig["htmlExporter"];
+	requestHeadersProvider?: (model: Model<any>, settingsManager: SettingsManager) => Record<string, string> | undefined;
 }
 
 export interface CreateAgentSessionOptions {
@@ -55,6 +62,13 @@ export interface CreateAgentSessionOptions {
 	tools?: string[];
 	noTools?: "all" | "builtin";
 	customTools?: ToolDefinition[];
+	initialActiveToolNames?: string[];
+	allowedToolNames?: string[];
+	baseToolDefinitionsOverride?: Record<string, ToolDefinition>;
+	baseToolsOverride?: Record<string, AgentTool>;
+	createDefaultBashOperations?: AgentSessionConfig["createDefaultBashOperations"];
+	htmlExporter?: AgentSessionConfig["htmlExporter"];
+	requestHeadersProvider?: (model: Model<any>, settingsManager: SettingsManager) => Record<string, string> | undefined;
 }
 
 export interface CreateAgentSessionResult {
@@ -225,8 +239,8 @@ export async function createAgentSessionFromServices(
 		}
 	}
 
-	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
-	const initialActiveToolNames = options.tools ? [...options.tools] : [];
+	const allowedToolNames = options.allowedToolNames ?? options.tools ?? (options.noTools === "all" ? [] : undefined);
+	const initialActiveToolNames = options.initialActiveToolNames ?? (options.tools ? [...options.tools] : []);
 	const extensionRunnerRef: { current?: ExtensionRunner } = {};
 	const convertToLlmWithBlockImages = (messages: AgentMessage[]): Message[] => {
 		const converted = convertToLlm(messages);
@@ -281,6 +295,7 @@ export async function createAgentSessionFromServices(
 			if (!auth.ok) {
 				throw new Error(auth.error);
 			}
+			const requestHeaders = options.requestHeadersProvider?.(resolvedModel, options.services.settingsManager);
 
 			return streamSimple(resolvedModel, context, {
 				...streamOptions,
@@ -289,7 +304,9 @@ export async function createAgentSessionFromServices(
 				maxRetries: streamOptions?.maxRetries ?? providerRetrySettings.maxRetries,
 				maxRetryDelayMs: streamOptions?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
 				headers:
-					auth.headers || streamOptions?.headers ? { ...auth.headers, ...streamOptions?.headers } : undefined,
+					requestHeaders || auth.headers || streamOptions?.headers
+						? { ...requestHeaders, ...auth.headers, ...streamOptions?.headers }
+						: undefined,
 			});
 		},
 		onPayload: async (payload) => {
@@ -350,6 +367,10 @@ export async function createAgentSessionFromServices(
 		allowedToolNames,
 		extensionRunnerRef,
 		sessionStartEvent: options.sessionStartEvent,
+		baseToolDefinitionsOverride: options.baseToolDefinitionsOverride,
+		baseToolsOverride: options.baseToolsOverride,
+		createDefaultBashOperations: options.createDefaultBashOperations,
+		htmlExporter: options.htmlExporter,
 	});
 
 	return {
@@ -395,5 +416,12 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		tools: options.tools,
 		noTools: options.noTools,
 		customTools: options.customTools,
+		initialActiveToolNames: options.initialActiveToolNames,
+		allowedToolNames: options.allowedToolNames,
+		baseToolDefinitionsOverride: options.baseToolDefinitionsOverride,
+		baseToolsOverride: options.baseToolsOverride,
+		createDefaultBashOperations: options.createDefaultBashOperations,
+		htmlExporter: options.htmlExporter,
+		requestHeadersProvider: options.requestHeadersProvider,
 	});
 }

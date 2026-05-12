@@ -1,6 +1,7 @@
 import { fauxAssistantMessage } from "@mariozechner/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { buildCodingWorkerPrompt, runCodingWorker } from "../../../src/core/orchestration/coding-worker.js";
+import { runCodingWorker as runCodingWorkerFromSubpath } from "../../../src/worker.js";
 import { createHarness, type Harness } from "../harness.js";
 
 describe("coding worker adapter", () => {
@@ -84,5 +85,9 @@ WORKER_RESULT_JSON:
 		expect(prompt).toContain("claim audit");
 		expect(prompt).toContain("no unsupported claims");
 		expect(prompt).toContain("WORKER_RESULT_JSON");
+	});
+
+	it("exposes the worker adapter through the worker entrypoint", () => {
+		expect(runCodingWorkerFromSubpath).toBe(runCodingWorker);
 	});
 });

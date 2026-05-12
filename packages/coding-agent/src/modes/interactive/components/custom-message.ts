@@ -1,8 +1,8 @@
+import type { MessageRenderer } from "@mariozechner/pi-agent-host/extensions";
+import type { CustomMessage } from "@mariozechner/pi-agent-host/messages";
 import type { TextContent } from "@mariozechner/pi-ai";
 import type { Component } from "@mariozechner/pi-tui";
 import { Box, Container, Markdown, type MarkdownTheme, Spacer, Text } from "@mariozechner/pi-tui";
-import type { MessageRenderer } from "../../../core/extensions/types.js";
-import type { CustomMessage } from "../../../core/messages.js";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
 
 /**

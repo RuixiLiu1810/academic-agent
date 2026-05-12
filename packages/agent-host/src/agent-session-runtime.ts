@@ -9,4 +9,5 @@ export {
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
 	createAgentSessionServices,
+	SessionImportFileNotFoundError,
 } from "./agent-session-runtime-impl.js";

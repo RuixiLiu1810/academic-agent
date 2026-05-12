@@ -1,3 +1,5 @@
+import { DefaultPackageManager } from "@mariozechner/pi-agent-host/package-manager";
+import { SettingsManager } from "@mariozechner/pi-agent-host/settings-manager";
 import chalk from "chalk";
 import { spawn } from "child_process";
 import { selectConfig } from "./cli/config-selector.js";
@@ -10,8 +12,6 @@ import {
 	type SelfUpdateCommand,
 	VERSION,
 } from "./config.js";
-import { DefaultPackageManager } from "./core/package-manager.js";
-import { SettingsManager } from "./core/settings-manager.js";
 import { shouldUseWindowsShell } from "./utils/child-process.js";
 import { getLatestPiVersion, isNewerPackageVersion } from "./utils/version-check.js";
 

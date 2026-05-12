@@ -1,5 +1,5 @@
+import { SessionImportFileNotFoundError } from "@mariozechner/pi-agent-host/agent-session-runtime";
 import { describe, expect, it, vi } from "vitest";
-import { SessionImportFileNotFoundError } from "../src/core/agent-session-runtime.js";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.js";
 
 type PathCommand = "/export" | "/import";

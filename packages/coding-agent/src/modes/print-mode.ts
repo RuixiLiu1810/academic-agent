@@ -6,9 +6,9 @@
  * - `pi --mode json "prompt"` - JSON event stream
  */
 
+import type { AgentSessionRuntime } from "@mariozechner/pi-agent-host/agent-session-runtime";
+import { flushRawStdout, writeRawStdout } from "@mariozechner/pi-agent-host/output-guard";
 import type { AssistantMessage, ImageContent } from "@mariozechner/pi-ai";
-import type { AgentSessionRuntime } from "../core/agent-session-runtime.js";
-import { flushRawStdout, writeRawStdout } from "../core/output-guard.js";
 import { killTrackedDetachedChildren } from "../utils/shell.js";
 
 /**

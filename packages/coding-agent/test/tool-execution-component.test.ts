@@ -1,10 +1,10 @@
 import { join } from "node:path";
+import type { ToolDefinition } from "@mariozechner/pi-agent-host/extensions";
 import { Text, type TUI } from "@mariozechner/pi-tui";
 import stripAnsi from "strip-ansi";
 import { Type } from "typebox";
 import { beforeAll, describe, expect, test } from "vitest";
 import { getReadmePath } from "../src/config.js";
-import type { ToolDefinition } from "../src/core/extensions/types.js";
 import { type BashOperations, createBashToolDefinition } from "../src/core/tools/bash.js";
 import { createReadTool, createReadToolDefinition } from "../src/core/tools/read.js";
 import { createWriteToolDefinition } from "../src/core/tools/write.js";

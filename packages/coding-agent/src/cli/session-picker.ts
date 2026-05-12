@@ -2,9 +2,9 @@
  * TUI session selector for --resume flag
  */
 
+import { KeybindingsManager } from "@mariozechner/pi-agent-host/keybindings";
+import type { SessionInfo, SessionListProgress } from "@mariozechner/pi-agent-host/session-manager";
 import { ProcessTerminal, setKeybindings, TUI } from "@mariozechner/pi-tui";
-import { KeybindingsManager } from "../core/keybindings.js";
-import type { SessionInfo, SessionListProgress } from "../core/session-manager.js";
 import { SessionSelectorComponent } from "../modes/interactive/components/session-selector.js";
 
 type SessionsLoader = (onProgress?: SessionListProgress) => Promise<SessionInfo[]>;

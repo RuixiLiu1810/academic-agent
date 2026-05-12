@@ -2,8 +2,12 @@
  * Verify the documentation example from extensions.md compiles and works.
  */
 
+import type {
+	ExtensionAPI,
+	SessionBeforeCompactEvent,
+	SessionCompactEvent,
+} from "@mariozechner/pi-agent-host/extensions";
 import { describe, expect, it } from "vitest";
-import type { ExtensionAPI, SessionBeforeCompactEvent, SessionCompactEvent } from "../src/core/extensions/index.js";
 
 describe("Documentation example", () => {
 	it("custom compaction example should type-check correctly", () => {

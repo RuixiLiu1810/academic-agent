@@ -1,5 +1,5 @@
+import { type LabelEntry, SessionManager } from "@mariozechner/pi-agent-host/session-manager";
 import { describe, expect, it } from "vitest";
-import { type LabelEntry, SessionManager } from "../../src/core/session-manager.js";
 
 describe("SessionManager labels", () => {
 	it("sets and gets labels", () => {

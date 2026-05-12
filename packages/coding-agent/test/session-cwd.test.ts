@@ -1,10 +1,13 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import {
+	type CreateAgentSessionRuntimeFactory,
+	createAgentSessionRuntime,
+} from "@mariozechner/pi-agent-host/agent-session-runtime";
+import { getMissingSessionCwdIssue, MissingSessionCwdError } from "@mariozechner/pi-agent-host/session-cwd";
+import { SessionManager } from "@mariozechner/pi-agent-host/session-manager";
 import { afterEach, describe, expect, it } from "vitest";
-import { type CreateAgentSessionRuntimeFactory, createAgentSessionRuntime } from "../src/core/agent-session-runtime.js";
-import { getMissingSessionCwdIssue, MissingSessionCwdError } from "../src/core/session-cwd.js";
-import { SessionManager } from "../src/core/session-manager.js";
 
 function createTempDir(name: string): string {
 	const dir = join(tmpdir(), `${name}-${Date.now()}-${Math.random().toString(36).slice(2)}`);

@@ -6,10 +6,10 @@
 
 import { type ChildProcess, spawn } from "node:child_process";
 import type { AgentEvent, AgentMessage, ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { SessionStats } from "@mariozechner/pi-agent-host/agent-session";
+import type { BashResult } from "@mariozechner/pi-agent-host/bash-executor";
+import type { CompactionResult } from "@mariozechner/pi-agent-host/compaction";
 import type { ImageContent } from "@mariozechner/pi-ai";
-import type { SessionStats } from "../../core/agent-session.js";
-import type { BashResult } from "../../core/bash-executor.js";
-import type { CompactionResult } from "../../core/compaction/index.js";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 import type { RpcCommand, RpcResponse, RpcSessionState, RpcSlashCommand } from "./rpc-types.js";
 

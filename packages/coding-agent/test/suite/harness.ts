@@ -7,16 +7,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentMessage, AgentTool } from "@mariozechner/pi-agent-core";
 import { Agent } from "@mariozechner/pi-agent-core";
+import { AgentSession, type AgentSessionEvent } from "@mariozechner/pi-agent-host/agent-session";
+import { AuthStorage } from "@mariozechner/pi-agent-host/auth-storage";
+import type { ExtensionRunner } from "@mariozechner/pi-agent-host/extensions";
+import { convertToLlm } from "@mariozechner/pi-agent-host/messages";
+import { ModelRegistry } from "@mariozechner/pi-agent-host/model-registry";
+import { SessionManager } from "@mariozechner/pi-agent-host/session-manager";
+import type { Settings } from "@mariozechner/pi-agent-host/settings-manager";
+import { SettingsManager } from "@mariozechner/pi-agent-host/settings-manager";
 import type { FauxModelDefinition, FauxProviderRegistration, FauxResponseStep, Model } from "@mariozechner/pi-ai";
 import { registerFauxProvider } from "@mariozechner/pi-ai";
-import { AgentSession, type AgentSessionEvent } from "../../src/core/agent-session.js";
-import { AuthStorage } from "../../src/core/auth-storage.js";
-import type { ExtensionRunner } from "../../src/core/extensions/index.js";
-import { convertToLlm } from "../../src/core/messages.js";
-import { ModelRegistry } from "../../src/core/model-registry.js";
-import { SessionManager } from "../../src/core/session-manager.js";
-import type { Settings } from "../../src/core/settings-manager.js";
-import { SettingsManager } from "../../src/core/settings-manager.js";
 import type { ExtensionFactory, ResourceLoader } from "../../src/index.js";
 import {
 	type CreateTestExtensionsResultInput,

@@ -16,41 +16,9 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
 		},
-		"./package-manager": {
-			"types": "./dist/core/package-manager.d.ts",
-			"import": "./dist/core/package-manager.js"
-		},
-		"./source-info": {
-			"types": "./dist/core/source-info.d.ts",
-			"import": "./dist/core/source-info.js"
-		},
-		"./skills": {
-			"types": "./dist/core/skills.d.ts",
-			"import": "./dist/core/skills.js"
-		},
-		"./prompt-templates": {
-			"types": "./dist/core/prompt-templates.d.ts",
-			"import": "./dist/core/prompt-templates.js"
-		},
-		"./resource-loader": {
-			"types": "./dist/core/resource-loader.d.ts",
-			"import": "./dist/core/resource-loader.js"
-		},
-		"./extensions": {
-			"types": "./dist/core/extensions/index.d.ts",
-			"import": "./dist/core/extensions/index.js"
-		},
-		"./agent-session": {
-			"types": "./dist/core/agent-session.d.ts",
-			"import": "./dist/core/agent-session.js"
-		},
-		"./agent-session-runtime": {
-			"types": "./dist/core/agent-session-runtime.d.ts",
-			"import": "./dist/core/agent-session-runtime.js"
-		},
-		"./hooks": {
-			"types": "./dist/core/hooks/index.d.ts",
-			"import": "./dist/core/hooks/index.js"
+		"./worker": {
+			"types": "./dist/worker.d.ts",
+			"import": "./dist/worker.js"
 		}
 	},
 	"files": [

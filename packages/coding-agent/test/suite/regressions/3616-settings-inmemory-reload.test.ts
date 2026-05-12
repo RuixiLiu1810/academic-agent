@@ -1,9 +1,9 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DefaultResourceLoader } from "@mariozechner/pi-agent-host/resource-loader";
+import { SettingsManager } from "@mariozechner/pi-agent-host/settings-manager";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DefaultResourceLoader } from "../../../src/core/resource-loader.js";
-import { SettingsManager } from "../../../src/core/settings-manager.js";
 
 describe("regression #3616: in-memory settings survive reload", () => {
 	let tempDir: string;

@@ -1,5 +1,6 @@
 import { createInterface } from "node:readline";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
+import type { Theme, ToolDefinition, ToolRenderResultOptions } from "@mariozechner/pi-agent-host/extensions";
 import { Text } from "@mariozechner/pi-tui";
 import { spawn } from "child_process";
 import { existsSync } from "fs";
@@ -7,7 +8,6 @@ import path from "path";
 import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import { ensureTool } from "../../utils/tools-manager.js";
-import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { resolveToCwd } from "./path-utils.js";
 import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
@@ -56,10 +56,7 @@ export interface FindToolOptions {
 	operations?: FindOperations;
 }
 
-function formatFindCall(
-	args: { pattern: string; path?: string; limit?: number } | undefined,
-	theme: typeof import("../../modes/interactive/theme/theme.js").theme,
-): string {
+function formatFindCall(args: { pattern: string; path?: string; limit?: number } | undefined, theme: Theme): string {
 	const pattern = str(args?.pattern);
 	const rawPath = str(args?.path);
 	const path = rawPath !== null ? shortenPath(rawPath || ".") : null;
@@ -82,7 +79,7 @@ function formatFindResult(
 		details?: FindToolDetails;
 	},
 	options: ToolRenderResultOptions,
-	theme: typeof import("../../modes/interactive/theme/theme.js").theme,
+	theme: Theme,
 	showImages: boolean,
 ): string {
 	const output = getTextOutput(result, showImages).trim();

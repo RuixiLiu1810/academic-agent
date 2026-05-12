@@ -3,9 +3,9 @@
  */
 
 import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
+import type { ExtensionFlag } from "@mariozechner/pi-agent-host/extensions";
 import chalk from "chalk";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR } from "../config.js";
-import type { ExtensionFlag } from "../core/extensions/types.js";
 
 export type Mode = "text" | "json" | "rpc";
 

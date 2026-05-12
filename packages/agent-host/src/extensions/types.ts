@@ -73,12 +73,30 @@ import type {
 import type { SlashCommandInfo } from "../slash-commands.js";
 import type { SourceInfo } from "../source-info.js";
 import type { BuildSystemPromptOptions } from "../system-prompt.js";
-import type { Theme } from "../theme-loader.js";
+import type { ThemeBg, ThemeColor } from "../theme-loader.js";
 
 export type { ExecOptions, ExecResult } from "../exec.js";
 export type { BuildSystemPromptOptions } from "../system-prompt.js";
 export type { AgentToolResult, AgentToolUpdateCallback, ToolExecutionMode };
 export type { AppKeybinding, KeybindingsManager } from "../keybindings.js";
+
+export interface Theme {
+	readonly name?: string;
+	readonly sourcePath?: string;
+	sourceInfo?: SourceInfo;
+	fg(color: ThemeColor, text: string): string;
+	bg(color: ThemeBg, text: string): string;
+	bold(text: string): string;
+	italic(text: string): string;
+	underline(text: string): string;
+	inverse(text: string): string;
+	strikethrough(text: string): string;
+	getFgAnsi(color: ThemeColor): string;
+	getBgAnsi(color: ThemeBg): string;
+	getColorMode(): "truecolor" | "256color";
+	getThinkingBorderColor(level: "off" | "minimal" | "low" | "medium" | "high" | "xhigh"): (str: string) => string;
+	getBashModeBorderColor(): (str: string) => string;
+}
 
 // ============================================================================
 // UI Context

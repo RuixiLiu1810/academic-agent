@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { AuthStorage } from "@mariozechner/pi-agent-host/auth-storage";
+import { clearConfigValueCache } from "@mariozechner/pi-agent-host/resolve-config-value";
 import { registerOAuthProvider } from "@mariozechner/pi-ai/oauth";
 import lockfile from "proper-lockfile";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.js";
-import { clearConfigValueCache } from "../src/core/resolve-config-value.js";
 
 describe("AuthStorage", () => {
 	let tempDir: string;

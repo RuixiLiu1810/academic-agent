@@ -1,10 +1,10 @@
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { AgentSessionEvent } from "@mariozechner/pi-agent-host/agent-session";
+import type { SessionContext } from "@mariozechner/pi-agent-host/session-manager";
 import type { AssistantMessage, ToolResultMessage, Usage } from "@mariozechner/pi-ai";
 import { Container, Text, type TUI } from "@mariozechner/pi-tui";
 import stripAnsi from "strip-ansi";
 import { beforeAll, describe, expect, test, vi } from "vitest";
-import type { AgentSessionEvent } from "../../../src/core/agent-session.js";
-import type { SessionContext } from "../../../src/core/session-manager.js";
 import type { ToolExecutionComponent } from "../../../src/modes/interactive/components/tool-execution.js";
 import { InteractiveMode } from "../../../src/modes/interactive/interactive-mode.js";
 import { initTheme } from "../../../src/modes/interactive/theme/theme.js";

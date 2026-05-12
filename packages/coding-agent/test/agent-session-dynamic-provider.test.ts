@@ -1,14 +1,14 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { AuthStorage } from "@mariozechner/pi-agent-host/auth-storage";
+import { DefaultResourceLoader } from "@mariozechner/pi-agent-host/resource-loader";
+import { SessionManager } from "@mariozechner/pi-agent-host/session-manager";
+import { SettingsManager } from "@mariozechner/pi-agent-host/settings-manager";
 import { getModel } from "@mariozechner/pi-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.js";
-import { DefaultResourceLoader } from "../src/core/resource-loader.js";
 import type { ExtensionFactory } from "../src/core/sdk.js";
 import { createAgentSession } from "../src/core/sdk.js";
-import { SessionManager } from "../src/core/session-manager.js";
-import { SettingsManager } from "../src/core/settings-manager.js";
 
 describe("AgentSession dynamic provider registration", () => {
 	let tempDir: string;

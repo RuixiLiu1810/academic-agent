@@ -2,11 +2,11 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
+import type { PromptTemplate } from "@mariozechner/pi-agent-host/prompt-templates";
+import { createSyntheticSourceInfo } from "@mariozechner/pi-agent-host/source-info";
 import { fauxAssistantMessage, fauxToolCall, type Model } from "@mariozechner/pi-ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
-import type { PromptTemplate } from "../../src/core/prompt-templates.js";
-import { createSyntheticSourceInfo } from "../../src/core/source-info.js";
 import { createTestResourceLoader } from "../utilities.js";
 import { createHarness, getMessageText, type Harness } from "./harness.js";
 

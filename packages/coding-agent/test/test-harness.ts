@@ -12,6 +12,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { Agent } from "@mariozechner/pi-agent-core";
+import { AgentSession, type AgentSessionEvent } from "@mariozechner/pi-agent-host/agent-session";
+import { AuthStorage } from "@mariozechner/pi-agent-host/auth-storage";
+import { ModelRegistry } from "@mariozechner/pi-agent-host/model-registry";
+import { SessionManager } from "@mariozechner/pi-agent-host/session-manager";
+import type { Settings } from "@mariozechner/pi-agent-host/settings-manager";
+import { SettingsManager } from "@mariozechner/pi-agent-host/settings-manager";
 import type {
 	AssistantMessage,
 	AssistantMessageEvent,
@@ -26,12 +32,6 @@ import type {
 	Usage,
 } from "@mariozechner/pi-ai";
 import { createAssistantMessageEventStream } from "@mariozechner/pi-ai";
-import { AgentSession, type AgentSessionEvent } from "../src/core/agent-session.js";
-import { AuthStorage } from "../src/core/auth-storage.js";
-import { ModelRegistry } from "../src/core/model-registry.js";
-import { SessionManager } from "../src/core/session-manager.js";
-import type { Settings } from "../src/core/settings-manager.js";
-import { SettingsManager } from "../src/core/settings-manager.js";
 import type { ExtensionFactory, ResourceLoader } from "../src/index.js";
 import {
 	type CreateTestExtensionsResultInput,

@@ -8,11 +8,11 @@ import type {
 } from "@mariozechner/pi-agent-contracts";
 import { createExecutionTrace, isArtifactRef } from "@mariozechner/pi-agent-contracts";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import type { AgentSession } from "@mariozechner/pi-agent-host/agent-session";
+import { SessionManager } from "@mariozechner/pi-agent-host/session-manager";
 import type { AssistantMessage } from "@mariozechner/pi-ai";
-import type { AgentSession } from "../agent-session.js";
 import type { CreateAgentSessionOptions } from "../sdk.js";
 import { createAgentSession } from "../sdk.js";
-import { SessionManager } from "../session-manager.js";
 
 export interface RunCodingWorkerOptions extends Omit<CreateAgentSessionOptions, "sessionManager"> {
 	session?: AgentSession;

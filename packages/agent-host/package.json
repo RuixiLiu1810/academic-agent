@@ -74,6 +74,10 @@
 			"types": "./dist/agent-session-runtime.d.ts",
 			"import": "./dist/agent-session-runtime.js"
 		},
+		"./agent-session-services": {
+			"types": "./dist/agent-session-services.d.ts",
+			"import": "./dist/agent-session-services.js"
+		},
 		"./session-manager": {
 			"types": "./dist/session-manager.d.ts",
 			"import": "./dist/session-manager.js"
@@ -85,6 +89,38 @@
 		"./theme-loader": {
 			"types": "./dist/theme-loader.d.ts",
 			"import": "./dist/theme-loader.js"
+		},
+		"./diagnostics": {
+			"types": "./dist/diagnostics.d.ts",
+			"import": "./dist/diagnostics.js"
+		},
+		"./footer-data-provider": {
+			"types": "./dist/footer-data-provider.d.ts",
+			"import": "./dist/footer-data-provider.js"
+		},
+		"./keybindings": {
+			"types": "./dist/keybindings.d.ts",
+			"import": "./dist/keybindings.js"
+		},
+		"./output-guard": {
+			"types": "./dist/output-guard.d.ts",
+			"import": "./dist/output-guard.js"
+		},
+		"./provider-display-names": {
+			"types": "./dist/provider-display-names.d.ts",
+			"import": "./dist/provider-display-names.js"
+		},
+		"./session-cwd": {
+			"types": "./dist/session-cwd.d.ts",
+			"import": "./dist/session-cwd.js"
+		},
+		"./slash-commands": {
+			"types": "./dist/slash-commands.d.ts",
+			"import": "./dist/slash-commands.js"
+		},
+		"./system-prompt": {
+			"types": "./dist/system-prompt.d.ts",
+			"import": "./dist/system-prompt.js"
 		},
 		"./bash-executor": {
 			"types": "./dist/bash-executor.d.ts",

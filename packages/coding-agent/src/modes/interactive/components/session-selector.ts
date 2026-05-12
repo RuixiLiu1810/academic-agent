@@ -2,6 +2,8 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import * as os from "node:os";
+import { KeybindingsManager } from "@mariozechner/pi-agent-host/keybindings";
+import type { SessionInfo, SessionListProgress } from "@mariozechner/pi-agent-host/session-manager";
 import {
 	type Component,
 	Container,
@@ -13,8 +15,6 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@mariozechner/pi-tui";
-import { KeybindingsManager } from "../../../core/keybindings.js";
-import type { SessionInfo, SessionListProgress } from "../../../core/session-manager.js";
 import { canonicalizePath as _canonicalizePath } from "../../../utils/paths.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";

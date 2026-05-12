@@ -6,17 +6,17 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync }
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Agent } from "@mariozechner/pi-agent-core";
+import { AgentSession } from "@mariozechner/pi-agent-host/agent-session";
+import { AuthStorage } from "@mariozechner/pi-agent-host/auth-storage";
+import { createEventBus } from "@mariozechner/pi-agent-host/event-bus";
+import type { Extension, ExtensionFactory, LoadExtensionsResult } from "@mariozechner/pi-agent-host/extensions";
+import { createExtensionRuntime, loadExtensionFromFactory } from "@mariozechner/pi-agent-host/extensions";
+import { ModelRegistry } from "@mariozechner/pi-agent-host/model-registry";
+import type { ResourceLoader } from "@mariozechner/pi-agent-host/resource-loader";
+import { SessionManager } from "@mariozechner/pi-agent-host/session-manager";
+import { SettingsManager } from "@mariozechner/pi-agent-host/settings-manager";
 import { getModel, type OAuthCredentials, type OAuthProvider } from "@mariozechner/pi-ai";
 import { getOAuthApiKey } from "@mariozechner/pi-ai/oauth";
-import { AgentSession } from "../src/core/agent-session.js";
-import { AuthStorage } from "../src/core/auth-storage.js";
-import { createEventBus } from "../src/core/event-bus.js";
-import type { Extension, ExtensionFactory, LoadExtensionsResult } from "../src/core/extensions/index.js";
-import { createExtensionRuntime, loadExtensionFromFactory } from "../src/core/extensions/loader.js";
-import { ModelRegistry } from "../src/core/model-registry.js";
-import type { ResourceLoader } from "../src/core/resource-loader.js";
-import { SessionManager } from "../src/core/session-manager.js";
-import { SettingsManager } from "../src/core/settings-manager.js";
 import { createCodingTools } from "../src/index.js";
 
 /**

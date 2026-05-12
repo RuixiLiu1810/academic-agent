@@ -69,7 +69,7 @@ export {
 } from "./write.js";
 
 import type { AgentTool } from "@mariozechner/pi-agent-core";
-import type { ToolDefinition } from "../extensions/types.js";
+import type { ToolDefinition } from "@mariozechner/pi-agent-host/extensions";
 import { type BashToolOptions, createBashTool, createBashToolDefinition } from "./bash.js";
 import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.js";
 import { createFindTool, createFindToolDefinition, type FindToolOptions } from "./find.js";

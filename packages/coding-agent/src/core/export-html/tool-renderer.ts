@@ -5,10 +5,9 @@
  * and converting the ANSI output to HTML.
  */
 
+import type { Theme, ToolDefinition, ToolRenderContext } from "@mariozechner/pi-agent-host/extensions";
 import type { ImageContent, TextContent } from "@mariozechner/pi-ai";
 import type { Component } from "@mariozechner/pi-tui";
-import type { Theme } from "../../modes/interactive/theme/theme.js";
-import type { ToolDefinition, ToolRenderContext } from "../extensions/types.js";
 import { ansiLinesToHtml } from "./ansi-to-html.js";
 
 export interface ToolHtmlRendererDeps {

@@ -1,15 +1,15 @@
 import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { AuthStorage } from "@mariozechner/pi-agent-host/auth-storage";
+import { ExtensionRunner } from "@mariozechner/pi-agent-host/extensions";
+import { ModelRegistry } from "@mariozechner/pi-agent-host/model-registry";
+import { DefaultResourceLoader } from "@mariozechner/pi-agent-host/resource-loader";
+import { SessionManager } from "@mariozechner/pi-agent-host/session-manager";
+import { SettingsManager } from "@mariozechner/pi-agent-host/settings-manager";
+import type { Skill } from "@mariozechner/pi-agent-host/skills";
+import { createSyntheticSourceInfo } from "@mariozechner/pi-agent-host/source-info";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.js";
-import { ExtensionRunner } from "../src/core/extensions/runner.js";
-import { ModelRegistry } from "../src/core/model-registry.js";
-import { DefaultResourceLoader } from "../src/core/resource-loader.js";
-import { SessionManager } from "../src/core/session-manager.js";
-import { SettingsManager } from "../src/core/settings-manager.js";
-import type { Skill } from "../src/core/skills.js";
-import { createSyntheticSourceInfo } from "../src/core/source-info.js";
 
 describe("DefaultResourceLoader", () => {
 	let tempDir: string;

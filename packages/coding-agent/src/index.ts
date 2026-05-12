@@ -12,9 +12,6 @@ export {
 	createAgentHostSession,
 	createAgentHostSessionFromServices,
 } from "@mariozechner/pi-agent-host";
-
-// Config paths
-export { getAgentDir, VERSION } from "./config.js";
 export {
 	AgentSession,
 	type AgentSessionConfig,
@@ -25,7 +22,7 @@ export {
 	type PromptOptions,
 	parseSkillBlock,
 	type SessionStats,
-} from "./core/agent-session.js";
+} from "@mariozechner/pi-agent-host/agent-session";
 // Auth and model registry
 export {
 	type ApiKeyCredential,
@@ -36,7 +33,7 @@ export {
 	FileAuthStorageBackend,
 	InMemoryAuthStorageBackend,
 	type OAuthCredential,
-} from "./core/auth-storage.js";
+} from "@mariozechner/pi-agent-host/auth-storage";
 // Compaction
 export {
 	type BranchPreparation,
@@ -59,8 +56,8 @@ export {
 	prepareBranchEntries,
 	serializeConversation,
 	shouldCompact,
-} from "./core/compaction/index.js";
-export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.js";
+} from "@mariozechner/pi-agent-host/compaction";
+export { createEventBus, type EventBus, type EventBusController } from "@mariozechner/pi-agent-host/event-bus";
 // Extension system
 export type {
 	AgentEndEvent,
@@ -127,6 +124,7 @@ export type {
 	SlashCommandSource,
 	SourceInfo,
 	TerminalInputHandler,
+	Theme,
 	ToolCallEvent,
 	ToolCallEventResult,
 	ToolDefinition,
@@ -141,7 +139,7 @@ export type {
 	WidgetPlacement,
 	WorkingIndicatorOptions,
 	WriteToolCallEvent,
-} from "./core/extensions/index.js";
+} from "@mariozechner/pi-agent-host/extensions";
 export {
 	createExtensionRuntime,
 	defineTool,
@@ -157,17 +155,11 @@ export {
 	isWriteToolResult,
 	wrapRegisteredTool,
 	wrapRegisteredTools,
-} from "./core/extensions/index.js";
+} from "@mariozechner/pi-agent-host/extensions";
 // Footer data provider (git branch + extension statuses - data not otherwise available to extensions)
-export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.js";
-export { convertToLlm } from "./core/messages.js";
-export { ModelRegistry } from "./core/model-registry.js";
-// Worker orchestration adapter
-export {
-	buildCodingWorkerPrompt,
-	type RunCodingWorkerOptions,
-	runCodingWorker,
-} from "./core/orchestration/coding-worker.js";
+export type { ReadonlyFooterDataProvider } from "@mariozechner/pi-agent-host/footer-data-provider";
+export { convertToLlm } from "@mariozechner/pi-agent-host/messages";
+export { ModelRegistry } from "@mariozechner/pi-agent-host/model-registry";
 export type {
 	PackageManager,
 	PathMetadata,
@@ -175,17 +167,71 @@ export type {
 	ProgressEvent,
 	ResolvedPaths,
 	ResolvedResource,
-} from "./core/package-manager.js";
-export { DefaultPackageManager } from "./core/package-manager.js";
+} from "@mariozechner/pi-agent-host/package-manager";
+export { DefaultPackageManager } from "@mariozechner/pi-agent-host/package-manager";
 export {
 	expandPromptTemplate,
 	type LoadPromptTemplatesOptions,
 	loadPromptTemplates,
 	parseCommandArgs,
 	substituteArgs,
-} from "./core/prompt-templates.js";
-export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.js";
-export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.js";
+} from "@mariozechner/pi-agent-host/prompt-templates";
+export type {
+	ResourceCollision,
+	ResourceDiagnostic,
+	ResourceLoader,
+} from "@mariozechner/pi-agent-host/resource-loader";
+export { DefaultResourceLoader, loadProjectContextFiles } from "@mariozechner/pi-agent-host/resource-loader";
+export {
+	type BranchSummaryEntry,
+	buildSessionContext,
+	type CompactionEntry,
+	CURRENT_SESSION_VERSION,
+	type CustomEntry,
+	type CustomMessageEntry,
+	type FileEntry,
+	getLatestCompactionEntry,
+	type ModelChangeEntry,
+	migrateSessionEntries,
+	type NewSessionOptions,
+	parseSessionEntries,
+	type SessionContext,
+	type SessionEntry,
+	type SessionEntryBase,
+	type SessionHeader,
+	type SessionInfo,
+	type SessionInfoEntry,
+	SessionManager,
+	type SessionMessageEntry,
+	type ThinkingLevelChangeEntry,
+} from "@mariozechner/pi-agent-host/session-manager";
+export {
+	type CompactionSettings,
+	type ImageSettings,
+	type PackageSource,
+	type RetrySettings,
+	SettingsManager,
+} from "@mariozechner/pi-agent-host/settings-manager";
+// Skills
+export {
+	formatSkillsForPrompt,
+	type LoadSkillsFromDirOptions,
+	type LoadSkillsOptions,
+	type LoadSkillsResult,
+	loadSkills,
+	loadSkillsFromDir,
+	type Skill,
+	type SkillFrontmatter,
+} from "@mariozechner/pi-agent-host/skills";
+export { createSourceInfo, createSyntheticSourceInfo } from "@mariozechner/pi-agent-host/source-info";
+// Config paths
+export { getAgentDir, VERSION } from "./config.js";
+// Worker orchestration adapter
+export {
+	buildCodingWorkerPrompt,
+	type RunCodingWorkerOptions,
+	runCodingWorker,
+} from "./core/orchestration/coding-worker.js";
 // SDK for programmatic usage
 export {
 	AgentSessionRuntime,
@@ -214,48 +260,6 @@ export {
 	createWriteTool,
 	type PromptTemplate,
 } from "./core/sdk.js";
-export {
-	type BranchSummaryEntry,
-	buildSessionContext,
-	type CompactionEntry,
-	CURRENT_SESSION_VERSION,
-	type CustomEntry,
-	type CustomMessageEntry,
-	type FileEntry,
-	getLatestCompactionEntry,
-	type ModelChangeEntry,
-	migrateSessionEntries,
-	type NewSessionOptions,
-	parseSessionEntries,
-	type SessionContext,
-	type SessionEntry,
-	type SessionEntryBase,
-	type SessionHeader,
-	type SessionInfo,
-	type SessionInfoEntry,
-	SessionManager,
-	type SessionMessageEntry,
-	type ThinkingLevelChangeEntry,
-} from "./core/session-manager.js";
-export {
-	type CompactionSettings,
-	type ImageSettings,
-	type PackageSource,
-	type RetrySettings,
-	SettingsManager,
-} from "./core/settings-manager.js";
-// Skills
-export {
-	formatSkillsForPrompt,
-	type LoadSkillsFromDirOptions,
-	type LoadSkillsOptions,
-	type LoadSkillsResult,
-	loadSkills,
-	loadSkillsFromDir,
-	type Skill,
-	type SkillFrontmatter,
-} from "./core/skills.js";
-export { createSourceInfo, createSyntheticSourceInfo } from "./core/source-info.js";
 // Tools
 export {
 	type BashOperations,
@@ -370,7 +374,6 @@ export {
 	getSettingsListTheme,
 	highlightCode,
 	initTheme,
-	Theme,
 	type ThemeColor,
 } from "./modes/interactive/theme/theme.js";
 // Clipboard utilities

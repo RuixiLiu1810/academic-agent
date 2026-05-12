@@ -8,6 +8,32 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
+import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "@mariozechner/pi-agent-host/agent-session";
+import {
+	type AgentSessionRuntime,
+	SessionImportFileNotFoundError,
+} from "@mariozechner/pi-agent-host/agent-session-runtime";
+import type {
+	AutocompleteProviderFactory,
+	EditorFactory,
+	ExtensionCommandContext,
+	ExtensionContext,
+	ExtensionRunner,
+	ExtensionUIContext,
+	ExtensionUIDialogOptions,
+	ExtensionWidgetOptions,
+	Theme,
+} from "@mariozechner/pi-agent-host/extensions";
+import { FooterDataProvider, type ReadonlyFooterDataProvider } from "@mariozechner/pi-agent-host/footer-data-provider";
+import { type AppKeybinding, KeybindingsManager } from "@mariozechner/pi-agent-host/keybindings";
+import { createCompactionSummaryMessage } from "@mariozechner/pi-agent-host/messages";
+import { DefaultPackageManager } from "@mariozechner/pi-agent-host/package-manager";
+import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "@mariozechner/pi-agent-host/provider-display-names";
+import type { ResourceDiagnostic } from "@mariozechner/pi-agent-host/resource-loader";
+import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "@mariozechner/pi-agent-host/session-cwd";
+import { type SessionContext, SessionManager } from "@mariozechner/pi-agent-host/session-manager";
+import { BUILTIN_SLASH_COMMANDS } from "@mariozechner/pi-agent-host/slash-commands";
+import type { SourceInfo } from "@mariozechner/pi-agent-host/source-info";
 import {
 	type AssistantMessage,
 	getProviders,
@@ -56,29 +82,7 @@ import {
 	getShareViewerUrl,
 	VERSION,
 } from "../../config.js";
-import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
-import { type AgentSessionRuntime, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.js";
-import type {
-	AutocompleteProviderFactory,
-	EditorFactory,
-	ExtensionCommandContext,
-	ExtensionContext,
-	ExtensionRunner,
-	ExtensionUIContext,
-	ExtensionUIDialogOptions,
-	ExtensionWidgetOptions,
-} from "../../core/extensions/index.js";
-import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.js";
-import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.js";
-import { createCompactionSummaryMessage } from "../../core/messages.js";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.js";
-import { DefaultPackageManager } from "../../core/package-manager.js";
-import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.js";
-import type { ResourceDiagnostic } from "../../core/resource-loader.js";
-import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.js";
-import { type SessionContext, SessionManager } from "../../core/session-manager.js";
-import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
-import type { SourceInfo } from "../../core/source-info.js";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
@@ -129,7 +133,6 @@ import {
 	setTheme,
 	setThemeInstance,
 	stopThemeWatcher,
-	Theme,
 	type ThemeColor,
 	theme,
 } from "./theme/theme.js";
@@ -1975,8 +1978,8 @@ export class InteractiveMode {
 			getAllThemes: () => getAvailableThemesWithPaths(),
 			getTheme: (name) => getThemeByName(name),
 			setTheme: (themeOrName) => {
-				if (themeOrName instanceof Theme) {
-					setThemeInstance(themeOrName);
+				if (typeof themeOrName !== "string") {
+					setThemeInstance(themeOrName as typeof theme);
 					this.ui.requestRender();
 					return { success: true };
 				}

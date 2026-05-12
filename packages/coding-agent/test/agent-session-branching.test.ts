@@ -10,18 +10,18 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getModel } from "@mariozechner/pi-ai";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { AgentSession } from "../src/core/agent-session.js";
+import type { AgentSession } from "@mariozechner/pi-agent-host/agent-session";
 import {
 	type AgentSessionRuntime,
 	type CreateAgentSessionRuntimeFactory,
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
 	createAgentSessionServices,
-} from "../src/core/agent-session-runtime.js";
-import { AuthStorage } from "../src/core/auth-storage.js";
-import { SessionManager } from "../src/core/session-manager.js";
+} from "@mariozechner/pi-agent-host/agent-session-runtime";
+import { AuthStorage } from "@mariozechner/pi-agent-host/auth-storage";
+import { SessionManager } from "@mariozechner/pi-agent-host/session-manager";
+import { getModel } from "@mariozechner/pi-ai";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { API_KEY } from "./utilities.js";
 
 describe.skipIf(!API_KEY)("AgentSession forking", () => {

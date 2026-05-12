@@ -1,12 +1,12 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createExtensionRuntime } from "@mariozechner/pi-agent-host/extensions";
+import type { ResourceLoader } from "@mariozechner/pi-agent-host/resource-loader";
+import { SessionManager } from "@mariozechner/pi-agent-host/session-manager";
+import { createSyntheticSourceInfo } from "@mariozechner/pi-agent-host/source-info";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createExtensionRuntime } from "../src/core/extensions/loader.js";
-import type { ResourceLoader } from "../src/core/resource-loader.js";
 import { createAgentSession } from "../src/core/sdk.js";
-import { SessionManager } from "../src/core/session-manager.js";
-import { createSyntheticSourceInfo } from "../src/core/source-info.js";
 
 describe("createAgentSession skills option", () => {
 	let tempDir: string;

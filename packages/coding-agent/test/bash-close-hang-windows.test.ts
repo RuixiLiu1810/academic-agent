@@ -2,8 +2,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { executeBashWithOperations } from "@mariozechner/pi-agent-host/bash-executor";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { executeBashWithOperations } from "../src/core/bash-executor.js";
 import { createBashTool, createLocalBashOperations } from "../src/core/tools/bash.js";
 
 function toBashSingleQuotedArg(value: string): string {

@@ -1,12 +1,11 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { AuthStorage } from "@mariozechner/pi-agent-host/auth-storage";
+import { discoverAndLoadExtensions, ExtensionRunner } from "@mariozechner/pi-agent-host/extensions";
+import { ModelRegistry } from "@mariozechner/pi-agent-host/model-registry";
+import { SessionManager } from "@mariozechner/pi-agent-host/session-manager";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.js";
-import { discoverAndLoadExtensions } from "../src/core/extensions/loader.js";
-import { ExtensionRunner } from "../src/core/extensions/runner.js";
-import { ModelRegistry } from "../src/core/model-registry.js";
-import { SessionManager } from "../src/core/session-manager.js";
 
 describe("Input Event", () => {
 	let tempDir: string;
