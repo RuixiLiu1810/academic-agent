@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ArtifactRef, WorkerRequest, WorkerResult } from "@mariozechner/pi-agent-contracts";
 import { createExecutionTrace } from "@mariozechner/pi-agent-contracts";
@@ -10,14 +11,17 @@ import {
 	MemoryArtifactStore,
 } from "@mariozechner/pi-artifact-core";
 import { createLeadAgentRuntime, type LeadAgentResult, type LeadAgentWorkerRunner } from "./index.js";
+import { createTemplateWorkflowPlanner, type WorkflowPlanner } from "./orchestration/index.js";
 
 export interface AcademicSmokeCase {
 	id: string;
 	objective: string;
 	fixtureFiles: string[];
 	expectedProfileId?: string;
+	expectedStepProfileIds?: string[];
 	expectedOutputs: string[];
 	artifactKind?: string;
+	artifactKinds?: string[];
 }
 
 export interface AcademicSmokeCaseResult {
@@ -68,16 +72,18 @@ export const DEFAULT_ACADEMIC_SMOKE_CASES: AcademicSmokeCase[] = [
 		objective: "Review the manuscript and reviewer comments, then produce severity ordered findings.",
 		fixtureFiles: ["manuscript_excerpt.md", "review_comments.md"],
 		expectedProfileId: "reviewer",
+		expectedStepProfileIds: ["reviewer", "reviser"],
 		expectedOutputs: ["review memo"],
-		artifactKind: ACADEMIC_ARTIFACT_KINDS.reviewCommentMap,
+		artifactKinds: [ACADEMIC_ARTIFACT_KINDS.reviewCommentMap, ACADEMIC_ARTIFACT_KINDS.revisionPlan],
 	},
 	{
 		id: "mini-paperorchestra-inputs",
 		objective: "Use the idea and experimental log to produce an evidence summary and outline.",
 		fixtureFiles: ["idea.md", "experimental_log.md"],
 		expectedProfileId: "researcher",
-		expectedOutputs: ["evidence summary"],
-		artifactKind: ACADEMIC_ARTIFACT_KINDS.evidenceTable,
+		expectedStepProfileIds: ["researcher", "writer"],
+		expectedOutputs: ["evidence summary", "outline"],
+		artifactKinds: [ACADEMIC_ARTIFACT_KINDS.evidenceTable, ACADEMIC_ARTIFACT_KINDS.outline],
 	},
 ];
 
@@ -108,7 +114,11 @@ function deterministicWorkerRunner(store: ArtifactStore): LeadAgentWorkerRunner 
 						? ACADEMIC_ARTIFACT_KINDS.revisionPlan
 						: request.workerType === "reviewer"
 							? ACADEMIC_ARTIFACT_KINDS.reviewCommentMap
-							: ACADEMIC_ARTIFACT_KINDS.evidenceTable,
+							: request.workerType === "reviser"
+								? ACADEMIC_ARTIFACT_KINDS.revisionPlan
+								: request.workerType === "writer"
+									? ACADEMIC_ARTIFACT_KINDS.outline
+									: ACADEMIC_ARTIFACT_KINDS.evidenceTable,
 			title: `${request.workerType} smoke artifact`,
 			content: `${request.workerType}: ${request.expectedOutputs.join(", ")}`,
 			metadata: {
@@ -134,10 +144,61 @@ function deterministicWorkerRunner(store: ArtifactStore): LeadAgentWorkerRunner 
 					version: artifact.version,
 				},
 			],
+			artifactBriefs: [
+				{
+					artifactId: artifact.id,
+					kind: artifact.kind,
+					title: artifact.title,
+					brief: `${request.workerType} produced ${expectedText}.`,
+					keyFindings: request.expectedOutputs,
+				},
+			],
 			warnings: [],
 			openQuestions: [],
 			executionTrace: createExecutionTrace(`academic-smoke-${request.taskId}`),
 		};
+	};
+}
+
+function createAcademicSmokePlanner(): WorkflowPlanner {
+	const templatePlanner = createTemplateWorkflowPlanner();
+	return {
+		async plan(input) {
+			if (input.taskId !== "mini-paperorchestra-inputs") {
+				return templatePlanner.plan(input);
+			}
+			return {
+				taskId: input.taskId,
+				sessionId: input.sessionId,
+				objective: input.objective,
+				rationale: "The smoke case needs evidence extraction before writing synthesis.",
+				userVisibleSummary: "I will extract evidence, then draft an outline from accepted evidence.",
+				mode: "workflow",
+				steps: [
+					{
+						id: "evidence-summary",
+						order: 1,
+						profileId: "researcher",
+						objective: "Separate experimental observations from interpretation.",
+						inputArtifactRefs: input.inputArtifacts,
+						expectedArtifactKinds: [ACADEMIC_ARTIFACT_KINDS.evidenceTable],
+						expectedOutputs: ["evidence summary"],
+						acceptanceCriteria: ["Evidence is separated from interpretation"],
+					},
+					{
+						id: "outline",
+						order: 2,
+						profileId: "writer",
+						objective: "Turn accepted evidence into a bounded outline.",
+						inputArtifactRefs: [],
+						expectedArtifactKinds: [ACADEMIC_ARTIFACT_KINDS.outline],
+						expectedOutputs: ["outline"],
+						acceptanceCriteria: ["Claims are bounded"],
+					},
+				],
+				stopConditions: ["Outline accepted"],
+			};
+		},
 	};
 }
 
@@ -152,6 +213,14 @@ function failuresForCase(testCase: AcademicSmokeCase, result: LeadAgentResult): 
 	if (testCase.expectedOutputs.length > 0 && result.decision.mode !== "worker") {
 		failures.push(`expected worker mode, got ${result.decision.mode}`);
 	}
+	if (testCase.expectedStepProfileIds) {
+		const actualProfileIds = result.workflowPlan?.steps.map((step) => step.profileId) ?? [];
+		if (actualProfileIds.join(",") !== testCase.expectedStepProfileIds.join(",")) {
+			failures.push(
+				`expected workflow steps ${testCase.expectedStepProfileIds.join(",")}, got ${actualProfileIds.join(",")}`,
+			);
+		}
+	}
 	if (result.acceptanceReport && !result.acceptanceReport.accepted) {
 		failures.push(`acceptance rejected: ${result.acceptanceReport.issues.map((issue) => issue.code).join(", ")}`);
 	}
@@ -160,6 +229,11 @@ function failuresForCase(testCase: AcademicSmokeCase, result: LeadAgentResult): 
 		!result.workerResult?.producedArtifacts.some((artifact) => artifact.kind === testCase.artifactKind)
 	) {
 		failures.push(`expected artifact kind ${testCase.artifactKind}`);
+	}
+	for (const artifactKind of testCase.artifactKinds ?? []) {
+		if (!result.artifactBriefs?.some((artifact) => artifact.kind === artifactKind)) {
+			failures.push(`expected artifact brief kind ${artifactKind}`);
+		}
 	}
 	return failures;
 }
@@ -170,25 +244,36 @@ export async function runAcademicSmokeSuite(
 	const fixtureDir = options.fixtureDir ?? defaultFixtureDir();
 	const store = createStore(options);
 	const workerRunner = options.workerRunner ?? deterministicWorkerRunner(store);
+	const tempCwd = options.artifactDir ? undefined : mkdtempSync(join(tmpdir(), "lead-agent-smoke-workspace-"));
 	const runtime = createLeadAgentRuntime({
+		cwd: tempCwd,
+		artifactDir: options.artifactDir,
 		workerRunner,
+		directRunner: async (request) => `Direct smoke synthesis: ${request.objective}`,
+		workflowPlanner: createAcademicSmokePlanner(),
 	});
 	const results: AcademicSmokeCaseResult[] = [];
-	for (const testCase of DEFAULT_ACADEMIC_SMOKE_CASES) {
-		const context = readFixtureContext(fixtureDir, testCase.fixtureFiles);
-		const result = await runtime.run({
-			taskId: testCase.id,
-			objective: testCase.objective,
-			constraints: [`Fixture context:\n\n${context}`],
-			expectedOutputs: testCase.expectedOutputs.length > 0 ? testCase.expectedOutputs : undefined,
-		});
-		const failures = failuresForCase(testCase, result);
-		results.push({
-			caseId: testCase.id,
-			result,
-			failures,
-			passed: failures.length === 0,
-		});
+	try {
+		for (const testCase of DEFAULT_ACADEMIC_SMOKE_CASES) {
+			const context = readFixtureContext(fixtureDir, testCase.fixtureFiles);
+			const result = await runtime.run({
+				taskId: testCase.id,
+				objective: testCase.objective,
+				constraints: [`Fixture context:\n\n${context}`],
+				expectedOutputs: testCase.expectedOutputs.length > 0 ? testCase.expectedOutputs : undefined,
+			});
+			const failures = failuresForCase(testCase, result);
+			results.push({
+				caseId: testCase.id,
+				result,
+				failures,
+				passed: failures.length === 0,
+			});
+		}
+	} finally {
+		if (tempCwd) {
+			rmSync(tempCwd, { recursive: true, force: true });
+		}
 	}
 	return {
 		results,
