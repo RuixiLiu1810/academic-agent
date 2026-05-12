@@ -12,11 +12,23 @@ import type {
 	WorkerResult,
 } from "@mariozechner/pi-agent-contracts";
 import { createAcceptanceReport, createExecutionTrace } from "@mariozechner/pi-agent-contracts";
-import { createAgentHostSession, SessionManager } from "@mariozechner/pi-agent-host";
-import { runCodingWorker } from "@mariozechner/pi-coding-agent";
+import {
+	type AgentHostSessionEvent,
+	createAgentHostSession,
+	type ModelRegistry,
+	SessionManager,
+} from "@mariozechner/pi-agent-host";
+import { buildLeadDirectMessage, LEAD_AGENT_SYSTEM_PROMPT } from "./prompts.js";
+import { dispatchCodingWorker } from "./workers/coding-worker-dispatcher.js";
 
 export type AcademicTaskType = "writing" | "research" | "review" | "revision" | "methods" | "citation";
 export type LeadAgentDispatchMode = "auto" | "direct" | "worker";
+
+/** Mirrors the ThinkingLevel from @mariozechner/pi-agent-core. */
+export type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+
+/** A model entry as returned by ModelRegistry.getAvailable(). */
+export type LeadAgentModel = ReturnType<ModelRegistry["getAvailable"]>[number];
 
 export interface LeadAgentTaskRequest {
 	taskId?: string;
@@ -29,6 +41,8 @@ export interface LeadAgentTaskRequest {
 	taskType?: AcademicTaskType;
 	profileId?: string;
 	dispatchMode?: LeadAgentDispatchMode;
+	/** Called for each session event during a direct run. Used for live TUI streaming. */
+	onDirectRunEvent?: (event: AgentHostSessionEvent) => void;
 }
 
 export interface LeadAgentDecision {
@@ -56,12 +70,22 @@ export interface LeadAgentRuntimeOptions {
 	profiles?: WorkerProfile[];
 	sessionManager?: SessionManager;
 	cwd?: string;
+	/** Model to use for the direct runner. If undefined, uses the default from settings. */
+	model?: LeadAgentModel;
+	/** Thinking level for extended reasoning. Defaults to "off". */
+	thinkingLevel?: ThinkingLevel;
+	/** Specific tools to enable. When set, noTools is ignored. */
+	tools?: string[];
+	/** Disable tools. "all" disables everything (default), "builtin" disables built-ins only. */
+	noTools?: "all" | "builtin";
 }
 
 export interface LeadAgentRuntime {
 	run(request: LeadAgentTaskRequest): Promise<LeadAgentResult>;
 	abort(): void;
 	plan(request: LeadAgentTaskRequest): LeadAgentDecision;
+	/** Update the model and thinking level used for subsequent direct tasks. */
+	setModel(model: LeadAgentModel | undefined, thinkingLevel?: ThinkingLevel): void;
 	profiles: readonly WorkerProfile[];
 	sessionManager: SessionManager;
 }
@@ -350,19 +374,15 @@ async function synthesizeDirect(
 	};
 }
 
-export function buildLeadDirectPrompt(request: LeadAgentTaskRequest): string {
-	const sections: string[] = [
-		"You are a lead academic author responsible for unified prose synthesis. Produce precise, well-structured academic writing that directly addresses the objective below.",
-	];
-	sections.push(`Objective:\n${request.objective}`);
-	if (request.constraints && request.constraints.length > 0) {
-		sections.push(`Constraints:\n${request.constraints.map((c) => `- ${c}`).join("\n")}`);
-	}
-	if (request.expectedOutputs && request.expectedOutputs.length > 0) {
-		sections.push(`Expected outputs:\n${request.expectedOutputs.map((o) => `- ${o}`).join("\n")}`);
-	}
-	return sections.join("\n\n");
-}
+/**
+ * @deprecated Import buildLeadDirectMessage from "./prompts.js" instead.
+ * Kept for backward compatibility.
+ */
+export {
+	buildLeadDirectMessage as buildLeadDirectPrompt,
+	buildLeadDirectMessage,
+	LEAD_AGENT_SYSTEM_PROMPT,
+} from "./prompts.js";
 
 function extractLastAssistantText(messages: readonly { role: string; content: unknown }[]): string {
 	for (let i = messages.length - 1; i >= 0; i--) {
@@ -390,11 +410,42 @@ function extractLastAssistantText(messages: readonly { role: string; content: un
 	return "";
 }
 
-function createDefaultDirectRunner(cwd: string): LeadAgentDirectRunner {
+function createDefaultDirectRunner(
+	cwd: string,
+	modelRef: { value: LeadAgentModel | undefined },
+	thinkingLevelRef: { value: ThinkingLevel | undefined },
+	toolsRef: { value: string[] | undefined },
+	noToolsRef: { value: "all" | "builtin" },
+	resetRef: { value: boolean },
+): LeadAgentDirectRunner {
+	// Persisted session for multi-turn context continuity.
+	// Replaced when resetRef.value is true (e.g. after setModel).
+	let cachedSession: Awaited<ReturnType<typeof createAgentHostSession>>["session"] | undefined;
+
 	return async (request) => {
-		const { session } = await createAgentHostSession({ cwd, noTools: "all" });
-		await session.prompt(buildLeadDirectPrompt(request));
-		const text = extractLastAssistantText(session.messages as readonly { role: string; content: unknown }[]);
+		if (!cachedSession || resetRef.value) {
+			const { session } = await createAgentHostSession({
+				cwd,
+				model: modelRef.value,
+				thinkingLevel: thinkingLevelRef.value,
+				tools: toolsRef.value,
+				noTools: toolsRef.value ? undefined : noToolsRef.value,
+			});
+			session.agent.state.systemPrompt = LEAD_AGENT_SYSTEM_PROMPT;
+			cachedSession = session;
+			resetRef.value = false;
+		}
+		const onDirectRunEvent = request.onDirectRunEvent;
+		let unsub: (() => void) | undefined;
+		if (onDirectRunEvent) {
+			unsub = cachedSession.subscribe(onDirectRunEvent);
+		}
+		try {
+			await cachedSession.prompt(buildLeadDirectMessage(request));
+		} finally {
+			unsub?.();
+		}
+		const text = extractLastAssistantText(cachedSession.messages as readonly { role: string; content: unknown }[]);
 		return text.trim().length > 0 ? text : request.objective;
 	};
 }
@@ -557,9 +608,26 @@ function recordLeadAssistantMessage(sessionManager: SessionManager, finalOutput:
 
 export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): LeadAgentRuntime {
 	const profiles = options.profiles ?? loadAcademicProfilesFromDir();
-	const workerRunner = options.workerRunner ?? runCodingWorker;
-	const directRunner = options.directRunner ?? createDefaultDirectRunner(options.cwd ?? process.cwd());
+	const workerRunner = options.workerRunner ?? dispatchCodingWorker;
 	const sessionManager = options.sessionManager ?? SessionManager.inMemory(options.cwd ?? process.cwd());
+
+	// Mutable refs so setModel() can update them after creation
+	const modelRef: { value: LeadAgentModel | undefined } = { value: options.model };
+	const thinkingLevelRef: { value: ThinkingLevel | undefined } = { value: options.thinkingLevel };
+	const toolsRef: { value: string[] | undefined } = { value: options.tools };
+	const noToolsRef: { value: "all" | "builtin" } = { value: options.noTools ?? "all" };
+	const resetRef: { value: boolean } = { value: false };
+
+	const directRunner =
+		options.directRunner ??
+		createDefaultDirectRunner(
+			options.cwd ?? process.cwd(),
+			modelRef,
+			thinkingLevelRef,
+			toolsRef,
+			noToolsRef,
+			resetRef,
+		);
 
 	let abortController = new AbortController();
 
@@ -618,6 +686,12 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 		profiles,
 		sessionManager,
 		plan: (request) => planLeadAgentTask(request, profiles),
+		setModel(model, thinkingLevel) {
+			modelRef.value = model;
+			thinkingLevelRef.value = thinkingLevel;
+			// Force a new agent session on next direct run so the new model takes effect.
+			resetRef.value = true;
+		},
 		abort() {
 			abortController.abort();
 		},
