@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
 	type AcceptanceReport,
 	AgentContractSchemas,
+	type ArtifactBrief,
 	type ArtifactManifest,
 	createAcceptanceReport,
 	createExecutionTrace,
+	createWorkflowPlan,
 	deserializeAcceptanceReport,
 	deserializeArtifactManifest,
 	deserializeWorkerRequest,
@@ -12,6 +14,7 @@ import {
 	isWorkerRequest,
 	isWorkerResult,
 	isWorkerResultSuccess,
+	isWorkflowPlan,
 	serializeContract,
 	type WorkerRequest,
 	type WorkerResult,
@@ -178,6 +181,51 @@ describe("agent contracts", () => {
 
 		expect(deserializeArtifactManifest(serializeContract(manifest))).toEqual(manifest);
 		expect(deserializeAcceptanceReport(serializeContract(report))).toEqual(report);
+	});
+
+	it("round-trips workflow plans", () => {
+		const plan = createWorkflowPlan({
+			taskId: "task-1",
+			sessionId: "session-1",
+			objective: "Audit citation support.",
+			rationale: "Citation support is separable from final writing.",
+			userVisibleSummary: "I will audit citations, then synthesize the result.",
+			mode: "workflow",
+			steps: [
+				{
+					id: "citation-audit",
+					order: 1,
+					profileId: "citation-checker",
+					objective: "Identify unsupported claims.",
+					inputArtifactRefs: [],
+					expectedArtifactKinds: ["claim-audit"],
+					expectedOutputs: ["citation audit"],
+					acceptanceCriteria: ["Unsupported claims are identified"],
+				},
+			],
+			stopConditions: ["Accepted citation audit is available"],
+		});
+
+		expect(isWorkflowPlan(plan)).toBe(true);
+		expect(JSON.parse(JSON.stringify(plan))).toMatchObject({
+			taskId: "task-1",
+			sessionId: "session-1",
+			mode: "workflow",
+			steps: [{ profileId: "citation-checker" }],
+		});
+	});
+
+	it("round-trips artifact briefs", () => {
+		const brief: ArtifactBrief = {
+			artifactId: "artifact-1",
+			kind: "claim-audit",
+			title: "Citation audit",
+			brief: "Two claims need citation support.",
+			keyFindings: ["Claim A lacks a source"],
+			limitations: ["Full bibliography was not supplied"],
+		};
+
+		expect(JSON.parse(JSON.stringify(brief))).toEqual(brief);
 	});
 
 	it("rejects invalid serialized contracts", () => {

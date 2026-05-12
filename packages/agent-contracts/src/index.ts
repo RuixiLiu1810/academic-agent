@@ -22,6 +22,15 @@ export interface ArtifactManifest {
 	metadata?: JsonObject;
 }
 
+export interface ArtifactBrief {
+	artifactId: string;
+	kind: string;
+	title?: string;
+	brief: string;
+	keyFindings?: string[];
+	limitations?: string[];
+}
+
 export interface ExecutionTraceEvent {
 	type: string;
 	timestamp: string;
@@ -80,6 +89,7 @@ export interface WorkerResult {
 	summary: string;
 	structuredOutputs?: JsonObject;
 	producedArtifacts: ArtifactRef[];
+	artifactBriefs?: ArtifactBrief[];
 	warnings: string[];
 	openQuestions: string[];
 	executionTrace: ExecutionTrace;
@@ -99,6 +109,55 @@ export interface AcceptanceReport {
 	checkedAt: string;
 	issues: AcceptanceIssue[];
 	summary?: string;
+}
+
+export interface WorkflowClarification {
+	question: string;
+	reason: string;
+	blocksExecution: boolean;
+}
+
+export type WorkflowPlanMode = "direct" | "workflow";
+
+export interface WorkflowStep {
+	id: string;
+	order: number;
+	profileId: string;
+	objective: string;
+	inputArtifactRefs: ArtifactRef[];
+	expectedArtifactKinds: string[];
+	expectedOutputs: string[];
+	acceptanceCriteria: string[];
+	budget?: WorkerBudget;
+}
+
+export interface WorkflowPlan {
+	taskId: string;
+	sessionId: string;
+	objective: string;
+	rationale: string;
+	userVisibleSummary: string;
+	mode: WorkflowPlanMode;
+	steps: WorkflowStep[];
+	stopConditions: string[];
+	requiresClarification?: WorkflowClarification;
+}
+
+export type StepDecisionKind = "continue" | "retry" | "ask_user" | "stop" | "synthesize";
+
+export interface StepDecision {
+	kind: StepDecisionKind;
+	reason: string;
+	question?: string;
+}
+
+export interface WorkflowStepResult {
+	step: WorkflowStep;
+	workerRequest?: WorkerRequest;
+	workerResult?: WorkerResult;
+	artifactBriefs: ArtifactBrief[];
+	acceptanceReport?: AcceptanceReport;
+	decision: StepDecision;
 }
 
 const stringArraySchema: JsonObject = {
@@ -125,6 +184,23 @@ export const ArtifactRefSchema: JsonObject = {
 		mediaType: { type: "string" },
 		version: { type: "string" },
 		metadata: jsonObjectSchema,
+	},
+	additionalProperties: false,
+};
+
+export const ArtifactBriefSchema: JsonObject = {
+	$schema: "https://json-schema.org/draft/2020-12/schema",
+	$id: "https://pi.local/schemas/agent-contracts/artifact-brief.json",
+	title: "ArtifactBrief",
+	type: "object",
+	required: ["artifactId", "kind", "brief"],
+	properties: {
+		artifactId: { type: "string" },
+		kind: { type: "string" },
+		title: { type: "string" },
+		brief: { type: "string" },
+		keyFindings: stringArraySchema,
+		limitations: stringArraySchema,
 	},
 	additionalProperties: false,
 };
@@ -236,6 +312,7 @@ export const WorkerResultSchema: JsonObject = {
 		summary: { type: "string" },
 		structuredOutputs: jsonObjectSchema,
 		producedArtifacts: { type: "array", items: ArtifactRefSchema },
+		artifactBriefs: { type: "array", items: ArtifactBriefSchema },
 		warnings: stringArraySchema,
 		openQuestions: stringArraySchema,
 		executionTrace: ExecutionTraceSchema,
@@ -273,15 +350,67 @@ export const AcceptanceReportSchema: JsonObject = {
 	additionalProperties: false,
 };
 
+export const WorkflowStepSchema: JsonObject = {
+	$schema: "https://json-schema.org/draft/2020-12/schema",
+	$id: "https://pi.local/schemas/agent-contracts/workflow-step.json",
+	title: "WorkflowStep",
+	type: "object",
+	required: [
+		"id",
+		"order",
+		"profileId",
+		"objective",
+		"inputArtifactRefs",
+		"expectedArtifactKinds",
+		"expectedOutputs",
+		"acceptanceCriteria",
+	],
+	properties: {
+		id: { type: "string" },
+		order: { type: "number" },
+		profileId: { type: "string" },
+		objective: { type: "string" },
+		inputArtifactRefs: { type: "array", items: ArtifactRefSchema },
+		expectedArtifactKinds: stringArraySchema,
+		expectedOutputs: stringArraySchema,
+		acceptanceCriteria: stringArraySchema,
+		budget: jsonObjectSchema,
+	},
+	additionalProperties: false,
+};
+
+export const WorkflowPlanSchema: JsonObject = {
+	$schema: "https://json-schema.org/draft/2020-12/schema",
+	$id: "https://pi.local/schemas/agent-contracts/workflow-plan.json",
+	title: "WorkflowPlan",
+	type: "object",
+	required: ["taskId", "sessionId", "objective", "rationale", "userVisibleSummary", "mode", "steps", "stopConditions"],
+	properties: {
+		taskId: { type: "string" },
+		sessionId: { type: "string" },
+		objective: { type: "string" },
+		rationale: { type: "string" },
+		userVisibleSummary: { type: "string" },
+		mode: { enum: ["direct", "workflow"] },
+		steps: { type: "array", items: WorkflowStepSchema },
+		stopConditions: stringArraySchema,
+		requiresClarification: jsonObjectSchema,
+	},
+	additionalProperties: false,
+};
+
 export const AgentContractSchemas: JsonObject = {
 	version: CONTRACT_SCHEMA_VERSION,
 	artifactRef: ArtifactRefSchema,
+	artifactBrief: ArtifactBriefSchema,
 	artifactManifest: ArtifactManifestSchema,
 	executionTrace: ExecutionTraceSchema,
 	workerProfile: WorkerProfileSchema,
 	workerRequest: WorkerRequestSchema,
 	workerResult: WorkerResultSchema,
 	acceptanceReport: AcceptanceReportSchema,
+	workflowStep: WorkflowStepSchema,
+	workflowPlan: WorkflowPlanSchema,
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -338,6 +467,24 @@ export function isArtifactRef(value: unknown): value is ArtifactRef {
 
 function isArtifactRefArray(value: unknown): value is ArtifactRef[] {
 	return Array.isArray(value) && value.every(isArtifactRef);
+}
+
+export function isArtifactBrief(value: unknown): value is ArtifactBrief {
+	if (!isRecord(value)) {
+		return false;
+	}
+	return (
+		typeof value.artifactId === "string" &&
+		typeof value.kind === "string" &&
+		hasOptionalString(value, "title") &&
+		typeof value.brief === "string" &&
+		hasOptionalStringArray(value, "keyFindings") &&
+		hasOptionalStringArray(value, "limitations")
+	);
+}
+
+function isArtifactBriefArray(value: unknown): value is ArtifactBrief[] {
+	return Array.isArray(value) && value.every(isArtifactBrief);
 }
 
 export function isArtifactManifest(value: unknown): value is ArtifactManifest {
@@ -449,6 +596,7 @@ export function isWorkerResult(value: unknown): value is WorkerResult {
 		typeof value.summary === "string" &&
 		hasOptionalJsonObject(value, "structuredOutputs") &&
 		isArtifactRefArray(value.producedArtifacts) &&
+		(value.artifactBriefs === undefined || isArtifactBriefArray(value.artifactBriefs)) &&
 		isStringArray(value.warnings) &&
 		isStringArray(value.openQuestions) &&
 		isExecutionTrace(value.executionTrace) &&
@@ -479,6 +627,52 @@ export function isAcceptanceReport(value: unknown): value is AcceptanceReport {
 		Array.isArray(value.issues) &&
 		value.issues.every(isAcceptanceIssue) &&
 		hasOptionalString(value, "summary")
+	);
+}
+
+function isWorkflowClarification(value: unknown): value is WorkflowClarification {
+	if (!isRecord(value)) {
+		return false;
+	}
+	return (
+		typeof value.question === "string" &&
+		typeof value.reason === "string" &&
+		typeof value.blocksExecution === "boolean"
+	);
+}
+
+export function isWorkflowStep(value: unknown): value is WorkflowStep {
+	if (!isRecord(value)) {
+		return false;
+	}
+	return (
+		typeof value.id === "string" &&
+		typeof value.order === "number" &&
+		typeof value.profileId === "string" &&
+		typeof value.objective === "string" &&
+		isArtifactRefArray(value.inputArtifactRefs) &&
+		isStringArray(value.expectedArtifactKinds) &&
+		isStringArray(value.expectedOutputs) &&
+		isStringArray(value.acceptanceCriteria) &&
+		(value.budget === undefined || isWorkerBudget(value.budget))
+	);
+}
+
+export function isWorkflowPlan(value: unknown): value is WorkflowPlan {
+	if (!isRecord(value)) {
+		return false;
+	}
+	return (
+		typeof value.taskId === "string" &&
+		typeof value.sessionId === "string" &&
+		typeof value.objective === "string" &&
+		typeof value.rationale === "string" &&
+		typeof value.userVisibleSummary === "string" &&
+		(value.mode === "direct" || value.mode === "workflow") &&
+		Array.isArray(value.steps) &&
+		value.steps.every(isWorkflowStep) &&
+		isStringArray(value.stopConditions) &&
+		(value.requiresClarification === undefined || isWorkflowClarification(value.requiresClarification))
 	);
 }
 
@@ -524,6 +718,10 @@ export function createExecutionTrace(runId: string, sessionId?: string): Executi
 
 export function isWorkerResultSuccess(result: WorkerResult): boolean {
 	return result.status === "success";
+}
+
+export function createWorkflowPlan(input: WorkflowPlan): WorkflowPlan {
+	return input;
 }
 
 export function createAcceptanceReport(result: WorkerResult, issues: AcceptanceIssue[] = []): AcceptanceReport {
