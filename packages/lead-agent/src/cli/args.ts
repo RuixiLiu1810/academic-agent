@@ -2,11 +2,17 @@ export const LEAD_TASK_TYPES = ["auto", "writing", "research", "review", "revisi
 export const LEAD_DISPATCH_MODES = ["auto", "direct", "worker"] as const;
 export const LEAD_OUTPUT_MODES = ["markdown", "json"] as const;
 export const LEAD_APP_MODES = ["markdown", "json", "interactive"] as const;
+export const LEAD_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 
 export type LeadCliTaskType = (typeof LEAD_TASK_TYPES)[number];
 export type LeadCliDispatchMode = (typeof LEAD_DISPATCH_MODES)[number];
 export type LeadCliOutputMode = (typeof LEAD_OUTPUT_MODES)[number];
 export type LeadCliAppMode = (typeof LEAD_APP_MODES)[number];
+export type LeadThinkingLevel = (typeof LEAD_THINKING_LEVELS)[number];
+
+export function isValidThinkingLevel(value: string): value is LeadThinkingLevel {
+	return LEAD_THINKING_LEVELS.includes(value as LeadThinkingLevel);
+}
 
 export interface LeadCliDiagnostic {
 	type: "warning" | "error";
@@ -33,7 +39,22 @@ export interface LeadCliArgs {
 	cwd?: string;
 	outputMode: LeadCliOutputMode;
 	appMode?: LeadCliAppMode;
+	// Model & auth
+	model?: string;
+	provider?: string;
+	apiKey?: string;
+	thinking?: LeadThinkingLevel;
+	models?: string[];
+	// Tools
+	tools?: string[];
+	noTools?: boolean;
+	noBuiltinTools?: boolean;
+	// Listing
+	listModels?: string | true;
 	help: boolean;
+	version: boolean;
+	verbose: boolean;
+	offline: boolean;
 	diagnostics: LeadCliDiagnostic[];
 }
 
@@ -68,6 +89,9 @@ export function parseLeadCliArgs(args: string[]): LeadCliArgs {
 		acceptanceCriteria: [],
 		outputMode: "markdown",
 		help: false,
+		version: false,
+		verbose: false,
+		offline: false,
 		diagnostics: [],
 	};
 
@@ -75,6 +99,12 @@ export function parseLeadCliArgs(args: string[]): LeadCliArgs {
 		const arg = args[index]!;
 		if (arg === "--help" || arg === "-h") {
 			result.help = true;
+		} else if (arg === "--version" || arg === "-v") {
+			result.version = true;
+		} else if (arg === "--verbose") {
+			result.verbose = true;
+		} else if (arg === "--offline") {
+			result.offline = true;
 		} else if (arg === "--mode") {
 			const value = readValue(args, index, arg, result.diagnostics);
 			if (value) {
@@ -184,6 +214,69 @@ export function parseLeadCliArgs(args: string[]): LeadCliArgs {
 			}
 		} else if (arg === "--no-session") {
 			result.noSession = true;
+		} else if (arg === "--model") {
+			const value = readValue(args, index, arg, result.diagnostics);
+			if (value) {
+				result.model = value;
+				index++;
+			}
+		} else if (arg === "--provider") {
+			const value = readValue(args, index, arg, result.diagnostics);
+			if (value) {
+				result.provider = value;
+				index++;
+			}
+		} else if (arg === "--api-key") {
+			const value = readValue(args, index, arg, result.diagnostics);
+			if (value) {
+				result.apiKey = value;
+				index++;
+			}
+		} else if (arg === "--thinking") {
+			const value = readValue(args, index, arg, result.diagnostics);
+			if (value) {
+				if (isValidThinkingLevel(value)) {
+					result.thinking = value;
+				} else {
+					result.diagnostics.push({
+						type: "error",
+						message: `Invalid thinking level "${value}". Valid values: ${LEAD_THINKING_LEVELS.join(", ")}`,
+					});
+				}
+				index++;
+			}
+		} else if (arg === "--models") {
+			const value = readValue(args, index, arg, result.diagnostics);
+			if (value) {
+				if (!result.models) result.models = [];
+				result.models.push(value);
+				index++;
+			}
+		} else if (arg === "--tools") {
+			const value = readValue(args, index, arg, result.diagnostics);
+			if (value) {
+				if (!result.tools) result.tools = [];
+				result.tools.push(
+					...value
+						.split(",")
+						.map((t) => t.trim())
+						.filter((t) => t.length > 0),
+				);
+				index++;
+			}
+		} else if (arg === "--no-tools") {
+			result.noTools = true;
+		} else if (arg === "--no-builtin-tools") {
+			result.noBuiltinTools = true;
+		} else if (arg === "--list-models") {
+			// Optional pattern: if the next arg doesn't start with - use it as filter
+			const next = args[index + 1];
+			if (next !== undefined && !next.startsWith("-")) {
+				result.listModels = next;
+				index++;
+			} else {
+				result.listModels = true;
+			}
 		} else if (arg === "--cwd") {
 			const value = readValue(args, index, arg, result.diagnostics);
 			if (value) {
@@ -250,7 +343,29 @@ Options:
   --direct                    Alias for --dispatch direct
   --worker                    Alias for --dispatch worker
   @file                       Include a file as academic context
+
+Model & auth:
+  --model <pattern>           Select model by id or provider/id pattern
+  --provider <name>           Filter model selection to a specific provider
+  --api-key <key>             API key to use for the selected provider
+  --thinking <level>          Thinking level: off, minimal, low, medium, high, xhigh
+  --models <pattern>          Add model to cycling list (can repeat)
+  --list-models [pattern]     List available models, optionally filtered
+
+Tools:
+  --tools <list>              Enable specific tools (comma-separated)
+  --no-tools                  Disable all tools (default for direct mode)
+  --no-builtin-tools          Disable built-in tools only
+
+  --version, -v               Print version and exit
+  --verbose                   Show verbose startup output
+  --offline                   Offline mode (sets PI_OFFLINE=1)
   --help, -h                  Show this help
 
-If no task argument is provided, the task is read from stdin.`;
+If no task argument is provided, the task is read from stdin.
+
+Environment variables:
+  ANTHROPIC_API_KEY            - Anthropic API key
+  OPENAI_API_KEY               - OpenAI API key
+  ANTHROPIC_OAUTH_TOKEN        - Anthropic OAuth token (alternative to API key)`;
 }
