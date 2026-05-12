@@ -4,6 +4,7 @@ export const DEFAULT_LEAD_TUI_KEYBINDINGS = {
 	exit: "ctrl+c",
 	help: "ctrl+h",
 	expand: "ctrl+g",
+	modelCycleForward: "ctrl+p",
 } as const;
 
 export type LeadTuiAction = keyof typeof DEFAULT_LEAD_TUI_KEYBINDINGS;

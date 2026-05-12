@@ -1,9 +1,12 @@
+import type { AgentHostSessionEvent, ModelRegistry } from "@mariozechner/pi-agent-host";
+import type { SelectListTheme } from "@mariozechner/pi-tui";
 import {
 	CancellableLoader,
 	Container,
 	Editor,
 	KeybindingsManager,
 	ProcessTerminal,
+	SelectList,
 	setKeybindings,
 	Text,
 	TUI,
@@ -11,16 +14,23 @@ import {
 } from "@mariozechner/pi-tui";
 import type { LeadAgentRunView } from "../../cli/output.js";
 import { createLeadAgentRunView } from "../../cli/output.js";
-import type { AcademicTaskType, LeadAgentRuntime } from "../../index.js";
+import type { AcademicTaskType, LeadAgentModel, LeadAgentRuntime, ThinkingLevel } from "../../index.js";
 import { FooterComponent } from "./components/footer.js";
 import { createHeaderComponent } from "./components/header.js";
-import { ErrorComponent, RunResultComponent, UserQueryComponent } from "./components/messages.js";
+import {
+	ErrorComponent,
+	RunResultComponent,
+	StreamingAssistantMessageComponent,
+	UserQueryComponent,
+} from "./components/messages.js";
 import { DEFAULT_LEAD_TUI_KEYBINDINGS, type LeadTuiAction } from "./keybindings.js";
 import { createLeadEditorTheme, createLeadMarkdownTheme, createLeadTuiTheme, type LeadTuiTheme } from "./theme.js";
 
 export interface LeadTuiInitialStateOptions {
 	sessionId: string;
 	keybindings?: Record<LeadTuiAction, string>;
+	initialModel?: LeadAgentModel;
+	initialThinkingLevel?: ThinkingLevel;
 }
 
 export interface LeadTuiState {
@@ -33,6 +43,11 @@ export interface LeadTuiState {
 	profileId?: string;
 	expectedOutputs: string[];
 	runCount: number;
+	model?: LeadAgentModel;
+	thinkingLevel?: ThinkingLevel;
+	totalInputTokens: number;
+	totalOutputTokens: number;
+	totalCost: number;
 }
 
 export function createLeadTuiInitialState(options: LeadTuiInitialStateOptions): LeadTuiState {
@@ -46,12 +61,25 @@ export function createLeadTuiInitialState(options: LeadTuiInitialStateOptions): 
 		profileId: undefined,
 		expectedOutputs: [],
 		runCount: 0,
+		model: options.initialModel,
+		thinkingLevel: options.initialThinkingLevel,
+		totalInputTokens: 0,
+		totalOutputTokens: 0,
+		totalCost: 0,
 	};
 }
 
 export interface RunLeadTuiModeOptions {
 	runtime: LeadAgentRuntime;
 	initialPrompt?: string;
+	/** Model registry for /model command and model cycling. */
+	modelRegistry?: ModelRegistry;
+	/** Initially selected model (from --model CLI flag). */
+	initialModel?: LeadAgentModel;
+	/** Initially selected thinking level (from --thinking CLI flag). */
+	initialThinkingLevel?: ThinkingLevel;
+	/** Show expanded header on startup (passed from --verbose flag). */
+	verbose?: boolean;
 }
 
 function parseTuiAcademicTaskType(value: string): AcademicTaskType | undefined {
@@ -74,6 +102,8 @@ function handleTuiSlashCommand(
 	footer: FooterComponent,
 	theme: LeadTuiTheme,
 	chatContainer: Container,
+	options: RunLeadTuiModeOptions,
+	tui: TUI,
 ): void {
 	const [cmd, ...parts] = text.slice(1).trim().split(/\s+/);
 	const value = parts.join(" ").trim();
@@ -106,6 +136,8 @@ function handleTuiSlashCommand(
 				`task-type:        ${state.taskType ?? "(not set)"}`,
 				`profile:          ${state.profileId ?? "(auto)"}`,
 				`expected-outputs: ${state.expectedOutputs.length > 0 ? state.expectedOutputs.join(", ") : "(none)"}`,
+				`model:            ${state.model ? `${state.model.provider}/${state.model.id}` : "(default)"}`,
+				`thinking:         ${state.thinkingLevel ?? "(default)"}`,
 			].join("\n");
 			chatContainer.addChild(new Text(theme.dim(lines), 1, 0));
 			break;
@@ -113,11 +145,12 @@ function handleTuiSlashCommand(
 		case "hotkeys": {
 			const kb = state.keybindings;
 			const lines = [
-				`submit:  ${kb.submit}`,
-				`cancel:  ${kb.cancel}`,
-				`exit:    ${kb.exit}`,
-				`help:    ${kb.help}`,
-				`expand:  ${kb.expand}`,
+				`submit:             ${kb.submit}`,
+				`cancel:             ${kb.cancel}`,
+				`exit:               ${kb.exit}`,
+				`help:               ${kb.help}`,
+				`expand:             ${kb.expand}`,
+				`modelCycleForward:  ${kb.modelCycleForward}`,
 			].join("\n");
 			chatContainer.addChild(new Text(theme.dim(lines), 1, 0));
 			break;
@@ -131,8 +164,97 @@ function handleTuiSlashCommand(
 			state.runCount = 0;
 			footer.sync(state);
 			break;
+		case "model": {
+			const registry = options.modelRegistry;
+			if (!registry) {
+				footer.setText(theme.error("No model registry available."));
+				break;
+			}
+			const available = registry.getAvailable();
+			if (!value) {
+				// Show model selector overlay
+				if (available.length === 0) {
+					footer.setText(theme.error("No models available. Configure a provider first."));
+				} else {
+					const selectTheme: SelectListTheme = {
+						selectedPrefix: (t: string) => theme.accent(t),
+						selectedText: (t: string) => theme.accent(t),
+						description: (t: string) => theme.dim(t),
+						scrollInfo: (t: string) => theme.dim(t),
+						noMatch: (t: string) => theme.dim(t),
+					};
+					const items = available.map((m) => ({
+						value: `${m.provider}/${m.id}`,
+						label: `${m.provider}/${m.id}`,
+						description: m.provider,
+					}));
+					const list = new SelectList(items, 10, selectTheme);
+					const overlayHandle = tui.showOverlay(list);
+					list.onSelect = (item) => {
+						const found = available.find((m) => `${m.provider}/${m.id}` === item.value);
+						if (found) {
+							state.model = found;
+							options.runtime.setModel(found, state.thinkingLevel);
+							footer.sync(state);
+						}
+						overlayHandle.hide();
+						tui.requestRender();
+					};
+					list.onCancel = () => {
+						overlayHandle.hide();
+						tui.requestRender();
+					};
+				}
+			} else {
+				// Select model by pattern
+				const lower = value.toLowerCase();
+				const found = available.find(
+					(m) =>
+						`${m.provider}/${m.id}`.toLowerCase() === lower ||
+						m.id.toLowerCase() === lower ||
+						`${m.provider}/${m.id}`.toLowerCase().includes(lower) ||
+						m.id.toLowerCase().includes(lower),
+				);
+				if (found) {
+					state.model = found;
+					options.runtime.setModel(found, state.thinkingLevel);
+					footer.sync(state);
+				} else {
+					footer.setText(theme.error(`No model found matching "${value}". Use /model to list available models.`));
+				}
+			}
+			break;
+		}
+		case "thinking": {
+			const level = value.toLowerCase();
+			if (
+				level === "off" ||
+				level === "minimal" ||
+				level === "low" ||
+				level === "medium" ||
+				level === "high" ||
+				level === "xhigh"
+			) {
+				state.thinkingLevel = level as ThinkingLevel;
+				options.runtime.setModel(state.model, state.thinkingLevel);
+				footer.sync(state);
+			} else if (!level) {
+				footer.setText(
+					theme.dim(
+						`thinking: ${state.thinkingLevel ?? "(default/off)"}. Use /thinking <off|minimal|low|medium|high|xhigh>`,
+					),
+				);
+			} else {
+				footer.setText(theme.error("thinking must be: off | minimal | low | medium | high | xhigh"));
+			}
+			break;
+		}
 		case "help":
-			footer.setText(theme.dim("/task-type · /profile · /expected-output · /session · /hotkeys · /new · /help"));
+			footer.setText(
+				theme.dim(
+					"/task-type · /profile · /expected-output · /model · /thinking · /session · /hotkeys · /new · /help",
+				),
+			);
 			break;
 		default:
 			footer.setText(theme.error(`unknown command: /${cmd ?? ""} — type /help for commands`));
@@ -154,6 +276,8 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 
 	const state = createLeadTuiInitialState({
 		sessionId: options.runtime.sessionManager.getSessionId(),
+		initialModel: options.initialModel,
+		initialThinkingLevel: options.initialThinkingLevel,
 	});
 
 	const tui = new TUI(new ProcessTerminal());
@@ -177,7 +301,7 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 	const footer = new FooterComponent(theme, state);
 
 	// Layout
-	const header = createHeaderComponent(theme, state.keybindings.expand);
+	const header = createHeaderComponent(theme, state.keybindings.expand, options.verbose ?? false);
 	tui.addChild(header);
 	tui.addChild(chatContainer);
 	tui.addChild(loaderContainer);
@@ -192,7 +316,7 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 
 		// Slash commands
 		if (text.startsWith("/")) {
-			handleTuiSlashCommand(text, state, footer, theme, chatContainer);
+			handleTuiSlashCommand(text, state, footer, theme, chatContainer, options, tui);
 			editor.setText("");
 			tui.requestRender();
 			return;
@@ -206,6 +330,10 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 
 		// Append user query to chat
 		chatContainer.addChild(new UserQueryComponent(text, theme, markdownTheme));
+
+		// Streaming assistant message (live-updated during the run)
+		const streamingComponent = new StreamingAssistantMessageComponent(theme, markdownTheme);
+		chatContainer.addChild(streamingComponent);
 
 		// Show spinner
 		const loader = new CancellableLoader(tui, theme.accent, theme.dim, "Running… (escape to interrupt)");
@@ -221,6 +349,29 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 				taskType: state.taskType,
 				profileId: state.profileId,
 				expectedOutputs: state.expectedOutputs.length > 0 ? state.expectedOutputs : undefined,
+				onDirectRunEvent: (event: AgentHostSessionEvent) => {
+					if (event.type === "message_update" && event.message.role === "assistant") {
+						const parts: string[] = [];
+						for (const content of event.message.content) {
+							if (content.type === "text" && content.text.length > 0) {
+								parts.push(content.text);
+							}
+						}
+						if (parts.length > 0) {
+							streamingComponent.update(parts.join(""), theme);
+							tui.requestRender();
+						}
+					} else if (event.type === "message_end" && event.message.role === "assistant") {
+						const usage = (
+							event.message as { usage?: { input: number; output: number; cost?: { total: number } } }
+						).usage;
+						if (usage) {
+							state.totalInputTokens += usage.input;
+							state.totalOutputTokens += usage.output;
+							state.totalCost += usage.cost?.total ?? 0;
+						}
+					}
+				},
 			});
 			const view = createLeadAgentRunView(result);
 			state.lastRun = view;
@@ -228,10 +379,13 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 			footer.sync(state);
 			loader.stop();
 			loaderContainer.clear();
+			// Replace the streaming component with the final result
+			chatContainer.removeChild(streamingComponent);
 			chatContainer.addChild(new RunResultComponent(view, theme, markdownTheme));
 		} catch (err) {
 			loader.stop();
 			loaderContainer.clear();
+			chatContainer.removeChild(streamingComponent);
 			if (err instanceof Error && err.name === "AbortError") {
 				// User cancelled — no error card
 			} else {
@@ -252,10 +406,31 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 		const cleanupHandlers: Array<() => void> = [];
 
 		const expandSeq = bindingToSequence(state.keybindings.expand);
+		const modelCycleSeq = bindingToSequence(state.keybindings.modelCycleForward);
+
+		// Track current model index for Ctrl+P cycling
+		const availableModels = options.modelRegistry?.getAvailable() ?? [];
+		let currentModelIndex = state.model
+			? availableModels.findIndex((m) => m.id === state.model!.id && m.provider === state.model!.provider)
+			: -1;
+
 		const removeInputListener = tui.addInputListener((data) => {
 			if (expandSeq !== undefined && data === expandSeq) {
 				header.toggle();
 				tui.requestRender();
+				return { consume: true };
+			}
+			if (modelCycleSeq !== undefined && data === modelCycleSeq && state.status !== "running") {
+				if (availableModels.length > 0) {
+					currentModelIndex = (currentModelIndex + 1) % availableModels.length;
+					const selected = availableModels[currentModelIndex];
+					if (selected) {
+						state.model = selected;
+						options.runtime.setModel(selected, state.thinkingLevel);
+						footer.sync(state);
+						tui.requestRender();
+					}
+				}
 				return { consume: true };
 			}
 		});

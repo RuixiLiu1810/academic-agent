@@ -13,7 +13,17 @@ export class FooterComponent extends Text {
 
 	sync(state: LeadTuiState): void {
 		const left = `session ${state.sessionId} · runs: ${state.runCount}`;
-		const right = state.taskType ? `[${state.taskType}]` : "enter to submit · /help";
+		const modelPart = state.model ? ` · ${state.model.id}` : "";
+		const thinkingPart =
+			state.thinkingLevel && state.thinkingLevel !== "off" ? ` · thinking:${state.thinkingLevel}` : "";
+		const totalTokens = state.totalInputTokens + state.totalOutputTokens;
+		const usagePart =
+			totalTokens > 0
+				? ` · ${totalTokens.toLocaleString()}tok${state.totalCost > 0 ? ` $${state.totalCost.toFixed(4)}` : ""}`
+				: "";
+		const right = state.taskType
+			? `[${state.taskType}]${modelPart}${thinkingPart}${usagePart}`
+			: `enter to submit · /help${modelPart}${thinkingPart}${usagePart}`;
 		this.setText(this.theme.dim(`${left}  ${right}`));
 	}
 }
