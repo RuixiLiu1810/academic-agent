@@ -1,15 +1,10 @@
-import type { ArtifactRef } from "@mariozechner/pi-agent-contracts";
 import type { WorkflowTemplate } from "./types.js";
 
-export interface TemplateSelectionInput {
-	objective: string;
-	expectedOutputs: string[];
-	inputArtifacts: ArtifactRef[];
-}
-
-function includesAny(text: string, terms: readonly string[]): boolean {
-	const normalized = text.toLowerCase();
-	return terms.some((term) => normalized.includes(term));
+export interface WorkflowTemplateSummary {
+	id: string;
+	title: string;
+	description: string;
+	steps: { profileId: string; role: string }[];
 }
 
 export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
@@ -127,32 +122,14 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
 	},
 ];
 
-export function selectWorkflowTemplateCandidates(input: TemplateSelectionInput): WorkflowTemplate[] {
-	const text = [
-		input.objective,
-		...input.expectedOutputs,
-		...input.inputArtifacts.map((artifact) => artifact.kind),
-	].join("\n");
-	const selected = WORKFLOW_TEMPLATES.filter((template) => {
-		if (template.id === "review-memo") {
-			return includesAny(text, ["review memo", "severity ordered", "review findings", "审阅", "审稿意见", "review"]);
-		}
-		if (template.id === "citation-audit") {
-			return includesAny(text, ["citation", "reference", "引用", "参考文献"]);
-		}
-		if (template.id === "method-audit") {
-			return includesAny(text, ["method", "statistics", "方法", "统计", "reproducibility"]);
-		}
-		if (template.id === "revision-response") {
-			return includesAny(text, ["reviewer", "comment", "response", "退修", "审稿", "意见"]);
-		}
-		if (template.id === "evidence-synthesis") {
-			return includesAny(text, ["evidence", "literature", "文献", "证据", "meta-analysis", "综述", "outline"]);
-		}
-		if (template.id === "outline-to-draft") {
-			return includesAny(text, ["draft", "first draft", "初稿", "写一版", "扩写", "提纲", "outline"]);
-		}
-		return false;
-	});
-	return selected.length > 0 ? selected : [WORKFLOW_TEMPLATES[0]!];
+export function summarizeWorkflowTemplatesForPlanner(templates: WorkflowTemplate[]): WorkflowTemplateSummary[] {
+	return templates.map((template) => ({
+		id: template.id,
+		title: template.title,
+		description: template.description,
+		steps: template.steps.map((step) => ({
+			profileId: step.profileId,
+			role: step.objective,
+		})),
+	}));
 }
