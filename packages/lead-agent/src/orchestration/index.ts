@@ -1,6 +1,7 @@
 export * from "./acceptance.js";
 export * from "./executor.js";
 export * from "./intake.js";
+export * from "./llm-planner.js";
 export * from "./planner.js";
 export * from "./synthesis.js";
 export * from "./templates.js";

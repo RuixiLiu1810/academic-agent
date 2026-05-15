@@ -23,10 +23,13 @@ import {
 	createFauxWorkflowPlanner,
 	createLeadSessionWorkspace,
 	createLeadTaskPlanningInput,
+	createLlmWorkflowPlanner,
 	executeWorkflowPlan,
 	type LeadAgentWorkerRunner,
 	type LeadSessionWorkspace,
+	PlannerValidationError,
 	synthesizeWorkflowFinalOutput,
+	WORKFLOW_TEMPLATES,
 	type WorkflowExecutionEvent,
 	type WorkflowPlanner,
 } from "./orchestration/index.js";
@@ -114,6 +117,8 @@ export interface LeadAgentRuntimeOptions {
 	cwd?: string;
 	/** Model to use for the direct runner. If undefined, uses the default from settings. */
 	model?: LeadAgentModel;
+	/** Model to use for the LLM workflow planner. When absent and no workflowPlanner is set, falls back to a direct-mode stub. */
+	plannerModel?: LeadAgentModel;
 	/** Thinking level for extended reasoning. Defaults to "off". */
 	thinkingLevel?: ThinkingLevel;
 	/** Specific tools to enable. When set, noTools is ignored. */
@@ -621,18 +626,25 @@ function latestWorkflowWorkerResult(stepResults: readonly { workerResult?: Worke
 export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): LeadAgentRuntime {
 	const profiles = options.profiles ?? loadAcademicProfilesFromDir();
 	const workerRunner = options.workerRunner ?? dispatchCodingWorker;
+	// Priority: 1. injected workflowPlanner  2. plannerModel → LLM planner  3. direct-mode stub fallback
 	const workflowPlanner =
 		options.workflowPlanner ??
-		createFauxWorkflowPlanner((input) => ({
-			taskId: input.taskId,
-			sessionId: input.sessionId,
-			objective: input.objective,
-			rationale: "No LLM planner configured; handling directly.",
-			userVisibleSummary: "I will handle this directly.",
-			mode: "direct" as const,
-			steps: [],
-			stopConditions: ["Final answer produced"],
-		}));
+		(options.plannerModel
+			? createLlmWorkflowPlanner({
+					model: options.plannerModel,
+					templates: WORKFLOW_TEMPLATES,
+					profiles,
+				})
+			: createFauxWorkflowPlanner((input) => ({
+					taskId: input.taskId,
+					sessionId: input.sessionId,
+					objective: input.objective,
+					rationale: "No LLM planner configured; handling directly.",
+					userVisibleSummary: "I will handle this directly.",
+					mode: "direct" as const,
+					steps: [],
+					stopConditions: ["Final answer produced"],
+				})));
 	const sessionManager = options.sessionManager ?? SessionManager.inMemory(options.cwd ?? process.cwd());
 
 	// Mutable refs so setModel() can update them after creation
@@ -691,7 +703,22 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			sessionId,
 			profiles,
 		});
-		let workflowPlan = await workflowPlanner.plan(planningInput);
+		let workflowPlan: WorkflowPlan;
+		try {
+			workflowPlan = await workflowPlanner.plan(planningInput);
+		} catch (e) {
+			if (e instanceof PlannerValidationError) {
+				const result: LeadAgentResult = {
+					taskId,
+					finalOutput: "未能生成可执行的工作流计划。请检查输入后重试。",
+					decision: { mode: "direct", reason: "Planner validation failed after repair" },
+					sessionId,
+				};
+				recordLeadAssistantMessage(sessionManager, result.finalOutput);
+				return result;
+			}
+			throw e;
+		}
 		if (
 			request.profileId &&
 			!workflowPlan.steps.some((step) => step.profileId === request.profileId) &&
