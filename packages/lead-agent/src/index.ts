@@ -720,13 +720,14 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			throw e;
 		}
 		if (
-			request.profileId &&
-			!workflowPlan.steps.some((step) => step.profileId === request.profileId) &&
-			workflowPlan.steps.length <= 1
+			(decision.mode === "worker" && workflowPlan.mode === "direct") ||
+			(request.profileId &&
+				!workflowPlan.steps.some((step) => step.profileId === request.profileId) &&
+				workflowPlan.steps.length <= 1)
 		) {
 			recordLeadEvent(sessionManager, "lead-agent.planner_override", {
 				taskId,
-				requestedProfileId: request.profileId,
+				requestedProfileId: request.profileId ?? null,
 				plannedMode: workflowPlan.mode,
 				plannedStepProfileIds: workflowPlan.steps.map((step) => step.profileId),
 				reason: "Explicit profileId was not present in planner output; falling back to a single-step workflow.",
