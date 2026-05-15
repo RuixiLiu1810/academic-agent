@@ -16,7 +16,6 @@ export interface LeadTaskPlanningInput {
 	inputArtifacts: ArtifactRef[];
 	profiles: readonly WorkerProfile[];
 	artifactBriefs: ArtifactBrief[];
-	templateCandidates: WorkflowTemplate[];
 }
 
 export interface WorkflowTemplateStep {
@@ -33,6 +32,12 @@ export interface WorkflowTemplate {
 	title: string;
 	description: string;
 	steps: WorkflowTemplateStep[];
+}
+
+export interface PlannerValidationContext {
+	profiles: readonly WorkerProfile[];
+	templates: WorkflowTemplate[];
+	inputArtifacts: ArtifactRef[];
 }
 
 export interface WorkflowPlanner {

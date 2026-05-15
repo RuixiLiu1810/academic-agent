@@ -1,33 +1,93 @@
-import type { WorkerProfile, WorkflowPlan } from "@mariozechner/pi-agent-contracts";
-import type { LeadTaskPlanningInput, WorkflowPlanner } from "./types.js";
+import type { WorkflowPlan } from "@mariozechner/pi-agent-contracts";
+import type { LeadTaskPlanningInput, PlannerValidationContext, WorkflowPlanner } from "./types.js";
 
-export function validateWorkflowPlan(plan: WorkflowPlan, profiles: readonly WorkerProfile[]): string[] {
+export function validateWorkflowPlan(plan: unknown, context: PlannerValidationContext): string[] {
 	const errors: string[] = [];
-	const profileIds = new Set(profiles.map((profile) => profile.id));
+
+	if (!plan || typeof plan !== "object" || Array.isArray(plan)) {
+		return ["Plan must be a non-null object"];
+	}
+	const p = plan as Record<string, unknown>;
+
+	if (p.mode !== "direct" && p.mode !== "workflow") {
+		errors.push(`Plan mode must be "direct" or "workflow", got ${JSON.stringify(p.mode)}`);
+		return errors;
+	}
+
+	if (!Array.isArray(p.steps)) {
+		errors.push("Plan steps must be an array");
+		return errors;
+	}
+
+	const profileIds = new Set(context.profiles.map((profile) => profile.id));
+	const inputArtifactIds = new Set(context.inputArtifacts.map((a) => a.id));
 	const stepIds = new Set<string>();
-	if (plan.mode === "direct" && plan.steps.length > 0) {
+
+	if (p.mode === "direct" && p.steps.length > 0) {
 		errors.push("Direct workflow plans must not contain worker steps");
 	}
-	if (plan.mode === "workflow" && plan.steps.length === 0) {
+	if (p.mode === "workflow" && p.steps.length === 0) {
 		errors.push("Workflow plans must contain at least one step");
 	}
-	for (const step of plan.steps) {
-		if (stepIds.has(step.id)) {
-			errors.push(`Duplicate workflow step id: ${step.id}`);
+
+	for (const step of p.steps as unknown[]) {
+		if (!step || typeof step !== "object" || Array.isArray(step)) {
+			errors.push("Each step must be a non-null object");
+			continue;
 		}
-		stepIds.add(step.id);
-		if (!profileIds.has(step.profileId)) {
-			errors.push(`Unknown workflow step profileId: ${step.profileId}`);
+		const s = step as Record<string, unknown>;
+		const stepId = typeof s.id === "string" ? s.id : "<unknown>";
+
+		if (typeof s.id !== "string") {
+			errors.push("Step missing string id");
+		} else {
+			if (stepIds.has(s.id)) {
+				errors.push(`Duplicate workflow step id: ${s.id}`);
+			}
+			stepIds.add(s.id);
 		}
-		if (step.order < 1) {
-			errors.push(`Workflow step ${step.id} has invalid order ${step.order}`);
+
+		if (typeof s.profileId !== "string") {
+			errors.push(`Step ${stepId}: missing string profileId`);
+		} else if (!profileIds.has(s.profileId)) {
+			errors.push(`Unknown workflow step profileId: ${s.profileId}`);
+		}
+
+		if (typeof s.order !== "number" || s.order < 1) {
+			errors.push(`Workflow step ${stepId} has invalid order ${s.order}`);
+		}
+
+		if (typeof s.objective !== "string") {
+			errors.push(`Step ${stepId}: objective must be a string`);
+		} else {
+			if (!s.objective.includes("User objective:")) {
+				errors.push(`Step ${stepId}: objective missing "User objective:" section`);
+			}
+			if (!s.objective.includes("Step objective:")) {
+				errors.push(`Step ${stepId}: objective missing "Step objective:" section`);
+			}
+		}
+
+		if (Array.isArray(s.inputArtifactRefs)) {
+			for (const ref of s.inputArtifactRefs as unknown[]) {
+				if (ref && typeof ref === "object" && !Array.isArray(ref)) {
+					const r = ref as Record<string, unknown>;
+					if (typeof r.id === "string" && !inputArtifactIds.has(r.id)) {
+						errors.push(`Step ${stepId}: inputArtifactRefs references unknown artifact id: ${r.id}`);
+					}
+				}
+			}
 		}
 	}
+
 	return errors;
 }
 
-export function assertValidWorkflowPlan(plan: WorkflowPlan, profiles: readonly WorkerProfile[]): void {
-	const errors = validateWorkflowPlan(plan, profiles);
+export function assertValidWorkflowPlan(
+	plan: unknown,
+	context: PlannerValidationContext,
+): asserts plan is WorkflowPlan {
+	const errors = validateWorkflowPlan(plan, context);
 	if (errors.length > 0) {
 		throw new Error(`Invalid workflow plan:\n${errors.map((error) => `- ${error}`).join("\n")}`);
 	}
@@ -37,41 +97,12 @@ export function createFauxWorkflowPlanner(factory: (input: LeadTaskPlanningInput
 	return {
 		async plan(input) {
 			const plan = factory(input);
-			assertValidWorkflowPlan(plan, input.profiles);
+			assertValidWorkflowPlan(plan, {
+				profiles: input.profiles,
+				templates: [],
+				inputArtifacts: input.inputArtifacts,
+			});
 			return plan;
 		},
 	};
-}
-
-export function createTemplateWorkflowPlanner(): WorkflowPlanner {
-	return createFauxWorkflowPlanner((input) => {
-		const template = input.templateCandidates[0];
-		if (!template || template.steps.length === 0) {
-			return {
-				taskId: input.taskId,
-				sessionId: input.sessionId,
-				objective: input.objective,
-				rationale: "The task is small enough for direct lead synthesis.",
-				userVisibleSummary: "I will handle this directly.",
-				mode: "direct",
-				steps: [],
-				stopConditions: ["Final answer produced"],
-			};
-		}
-		return {
-			taskId: input.taskId,
-			sessionId: input.sessionId,
-			objective: input.objective,
-			rationale: `Template ${template.id} was selected and accepted by the planner.`,
-			userVisibleSummary: `I will run ${template.title.toLowerCase()} and synthesize the accepted result.`,
-			mode: "workflow",
-			steps: template.steps.map((step, index) => ({
-				...step,
-				order: index + 1,
-				inputArtifactRefs: input.inputArtifacts,
-				expectedOutputs: input.expectedOutputs.length > 0 ? input.expectedOutputs : step.expectedOutputs,
-			})),
-			stopConditions: ["All planned steps are accepted"],
-		};
-	});
 }

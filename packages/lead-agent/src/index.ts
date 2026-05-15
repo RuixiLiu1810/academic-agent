@@ -20,13 +20,12 @@ import {
 } from "@mariozechner/pi-agent-host";
 import type { ArtifactStore } from "@mariozechner/pi-artifact-core";
 import {
+	createFauxWorkflowPlanner,
 	createLeadSessionWorkspace,
 	createLeadTaskPlanningInput,
-	createTemplateWorkflowPlanner,
 	executeWorkflowPlan,
 	type LeadAgentWorkerRunner,
 	type LeadSessionWorkspace,
-	selectWorkflowTemplateCandidates,
 	synthesizeWorkflowFinalOutput,
 	type WorkflowExecutionEvent,
 	type WorkflowPlanner,
@@ -622,7 +621,18 @@ function latestWorkflowWorkerResult(stepResults: readonly { workerResult?: Worke
 export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): LeadAgentRuntime {
 	const profiles = options.profiles ?? loadAcademicProfilesFromDir();
 	const workerRunner = options.workerRunner ?? dispatchCodingWorker;
-	const workflowPlanner = options.workflowPlanner ?? createTemplateWorkflowPlanner();
+	const workflowPlanner =
+		options.workflowPlanner ??
+		createFauxWorkflowPlanner((input) => ({
+			taskId: input.taskId,
+			sessionId: input.sessionId,
+			objective: input.objective,
+			rationale: "No LLM planner configured; handling directly.",
+			userVisibleSummary: "I will handle this directly.",
+			mode: "direct" as const,
+			steps: [],
+			stopConditions: ["Final answer produced"],
+		}));
 	const sessionManager = options.sessionManager ?? SessionManager.inMemory(options.cwd ?? process.cwd());
 
 	// Mutable refs so setModel() can update them after creation
@@ -675,17 +685,11 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			return result;
 		}
 
-		const templateCandidates = selectWorkflowTemplateCandidates({
-			objective: request.objective,
-			expectedOutputs: request.expectedOutputs ?? [],
-			inputArtifacts: request.inputArtifacts ?? [],
-		});
 		const planningInput = createLeadTaskPlanningInput({
 			request,
 			taskId,
 			sessionId,
 			profiles,
-			templateCandidates,
 		});
 		let workflowPlan = await workflowPlanner.plan(planningInput);
 		if (

@@ -2,11 +2,42 @@ import type { WorkflowPlan } from "@mariozechner/pi-agent-contracts";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ACADEMIC_PROFILES } from "../src/index.js";
 import { createFauxWorkflowPlanner, validateWorkflowPlan } from "../src/orchestration/planner.js";
-import { selectWorkflowTemplateCandidates, WORKFLOW_TEMPLATES } from "../src/orchestration/templates.js";
+import { WORKFLOW_TEMPLATES } from "../src/orchestration/templates.js";
 
-describe("workflow planner", () => {
-	it("defines the full template inventory from the orchestration spec", () => {
-		expect(WORKFLOW_TEMPLATES.map((template) => template.id)).toEqual([
+function ctx(overrides: Partial<Parameters<typeof validateWorkflowPlan>[1]> = {}) {
+	return {
+		profiles: DEFAULT_ACADEMIC_PROFILES,
+		templates: WORKFLOW_TEMPLATES,
+		inputArtifacts: [],
+		...overrides,
+	};
+}
+
+const validDirectPlan: WorkflowPlan = {
+	taskId: "task-1",
+	sessionId: "session-1",
+	objective: "Write concise text.",
+	rationale: "Small writing task.",
+	userVisibleSummary: "I will handle this directly.",
+	mode: "direct",
+	steps: [],
+	stopConditions: ["Final answer produced"],
+};
+
+const validStep = {
+	id: "step-1",
+	order: 1,
+	profileId: "researcher",
+	objective: "User objective: Write a review.\n\nStep objective: Collect supporting evidence.",
+	inputArtifactRefs: [],
+	expectedArtifactKinds: ["evidence-table"],
+	expectedOutputs: ["evidence summary"],
+	acceptanceCriteria: ["Evidence is separated from interpretation"],
+};
+
+describe("validateWorkflowPlan", () => {
+	it("defines the full template inventory", () => {
+		expect(WORKFLOW_TEMPLATES.map((t) => t.id)).toEqual([
 			"direct-writing",
 			"citation-audit",
 			"method-audit",
@@ -17,83 +48,117 @@ describe("workflow planner", () => {
 		]);
 	});
 
-	it("selects templates only as candidates", () => {
-		const candidates = selectWorkflowTemplateCandidates({
-			objective: "Review reviewer comments and draft a response strategy.",
-			expectedOutputs: [],
-			inputArtifacts: [],
-		});
-
-		expect(candidates.map((candidate) => candidate.id)).toContain("revision-response");
-		expect(candidates[0]?.steps.length).toBeGreaterThan(0);
+	it("accepts a valid direct plan", () => {
+		expect(validateWorkflowPlan(validDirectPlan, ctx())).toEqual([]);
 	});
 
-	it("matches review and writing templates from natural-language objectives", () => {
-		const reviewCandidates = selectWorkflowTemplateCandidates({
-			objective: "Please produce a severity ordered review memo for this manuscript.",
-			expectedOutputs: ["review memo"],
-			inputArtifacts: [],
-		});
-		const writingCandidates = selectWorkflowTemplateCandidates({
-			objective: "写一版学术中文初稿，基于现有提纲扩写成完整 draft。",
-			expectedOutputs: ["draft text"],
-			inputArtifacts: [{ id: "outline-1", kind: "outline", uri: "memory://outline-1" }],
-		});
-
-		expect(reviewCandidates.map((candidate) => candidate.id)).toContain("review-memo");
-		expect(writingCandidates.map((candidate) => candidate.id)).toContain("outline-to-draft");
+	it("accepts a valid workflow plan with correct objective format", () => {
+		const plan: WorkflowPlan = { ...validDirectPlan, mode: "workflow", steps: [validStep] };
+		expect(validateWorkflowPlan(plan, ctx())).toEqual([]);
 	});
 
-	it("validates profile ids, duplicate steps, and direct plans", () => {
-		const plan: WorkflowPlan = {
-			taskId: "task-1",
-			sessionId: "session-1",
-			objective: "Write concise text.",
-			rationale: "Small writing task.",
-			userVisibleSummary: "I will handle this directly.",
-			mode: "direct",
-			steps: [],
-			stopConditions: ["Final answer produced"],
-		};
+	it("rejects direct plan with non-empty steps", () => {
+		expect(validateWorkflowPlan({ ...validDirectPlan, mode: "direct", steps: [validStep] }, ctx())).toContain(
+			"Direct workflow plans must not contain worker steps",
+		);
+	});
 
-		expect(validateWorkflowPlan(plan, DEFAULT_ACADEMIC_PROFILES)).toEqual([]);
+	it("rejects workflow plan with no steps", () => {
+		expect(validateWorkflowPlan({ ...validDirectPlan, mode: "workflow", steps: [] }, ctx())).toContain(
+			"Workflow plans must contain at least one step",
+		);
+	});
+
+	it("rejects unknown profileId", () => {
 		expect(
 			validateWorkflowPlan(
-				{
-					...plan,
-					mode: "workflow",
-					steps: [
-						{
-							id: "x",
-							order: 1,
-							profileId: "missing-profile",
-							objective: "Invalid step",
-							inputArtifactRefs: [],
-							expectedArtifactKinds: [],
-							expectedOutputs: [],
-							acceptanceCriteria: [],
-						},
-					],
-				},
-				DEFAULT_ACADEMIC_PROFILES,
+				{ ...validDirectPlan, mode: "workflow", steps: [{ ...validStep, profileId: "missing-profile" }] },
+				ctx(),
 			),
 		).toContain("Unknown workflow step profileId: missing-profile");
 	});
 
-	it("uses an injectable faux planner that may adapt template candidates", async () => {
+	it("rejects duplicate step ids", () => {
+		expect(
+			validateWorkflowPlan({ ...validDirectPlan, mode: "workflow", steps: [validStep, { ...validStep }] }, ctx()),
+		).toContain("Duplicate workflow step id: step-1");
+	});
+
+	it("rejects step missing 'User objective:' section", () => {
+		expect(
+			validateWorkflowPlan(
+				{
+					...validDirectPlan,
+					mode: "workflow",
+					steps: [{ ...validStep, objective: "Step objective: Collect evidence." }],
+				},
+				ctx(),
+			),
+		).toContain('Step step-1: objective missing "User objective:" section');
+	});
+
+	it("rejects step missing 'Step objective:' section", () => {
+		expect(
+			validateWorkflowPlan(
+				{
+					...validDirectPlan,
+					mode: "workflow",
+					steps: [{ ...validStep, objective: "User objective: Write a review." }],
+				},
+				ctx(),
+			),
+		).toContain('Step step-1: objective missing "Step objective:" section');
+	});
+
+	it("rejects inputArtifactRefs referencing unknown artifact id", () => {
+		expect(
+			validateWorkflowPlan(
+				{
+					...validDirectPlan,
+					mode: "workflow",
+					steps: [
+						{
+							...validStep,
+							inputArtifactRefs: [{ id: "ghost-artifact", kind: "draft", uri: "memory://ghost" }],
+						},
+					],
+				},
+				ctx({ inputArtifacts: [] }),
+			),
+		).toContain("Step step-1: inputArtifactRefs references unknown artifact id: ghost-artifact");
+	});
+
+	it("accepts inputArtifactRefs when artifact id is in context", () => {
+		const artifact = { id: "doc-1", kind: "draft", uri: "memory://doc-1" };
+		expect(
+			validateWorkflowPlan(
+				{
+					...validDirectPlan,
+					mode: "workflow",
+					steps: [{ ...validStep, inputArtifactRefs: [artifact] }],
+				},
+				ctx({ inputArtifacts: [artifact] }),
+			),
+		).toEqual([]);
+	});
+});
+
+describe("createFauxWorkflowPlanner", () => {
+	it("uses an injectable faux planner that may adapt template logic", async () => {
 		const planner = createFauxWorkflowPlanner((input) => ({
 			taskId: input.taskId,
 			sessionId: input.sessionId,
 			objective: input.objective,
 			rationale: "The method audit should run before reviewer synthesis.",
 			userVisibleSummary: "I will audit methods, then synthesize a review memo.",
-			mode: "workflow",
+			mode: "workflow" as const,
 			steps: [
 				{
 					id: "method-audit",
 					order: 1,
 					profileId: "method-auditor",
-					objective: "Audit reproducibility assumptions.",
+					objective:
+						"User objective: Review methods and comments.\n\nStep objective: Audit reproducibility assumptions.",
 					inputArtifactRefs: [],
 					expectedArtifactKinds: ["revision-plan"],
 					expectedOutputs: ["methods audit"],
@@ -103,7 +168,8 @@ describe("workflow planner", () => {
 					id: "reviewer-synthesis",
 					order: 2,
 					profileId: "reviewer",
-					objective: "Synthesize severity ordered findings.",
+					objective:
+						"User objective: Review methods and comments.\n\nStep objective: Synthesize severity ordered findings.",
 					inputArtifactRefs: [],
 					expectedArtifactKinds: ["review-comment-map"],
 					expectedOutputs: ["review memo"],
@@ -122,9 +188,34 @@ describe("workflow planner", () => {
 			inputArtifacts: [],
 			profiles: DEFAULT_ACADEMIC_PROFILES,
 			artifactBriefs: [],
-			templateCandidates: [],
 		});
 
 		expect(plan.steps.map((step) => step.profileId)).toEqual(["method-auditor", "reviewer"]);
+	});
+
+	it("throws when factory produces a workflow plan with no steps", async () => {
+		const planner = createFauxWorkflowPlanner((input) => ({
+			taskId: input.taskId,
+			sessionId: input.sessionId,
+			objective: input.objective,
+			rationale: "Bad plan.",
+			userVisibleSummary: "...",
+			mode: "workflow" as const,
+			steps: [],
+			stopConditions: [],
+		}));
+
+		await expect(
+			planner.plan({
+				taskId: "t1",
+				sessionId: "s1",
+				objective: "Test",
+				constraints: [],
+				expectedOutputs: [],
+				inputArtifacts: [],
+				profiles: DEFAULT_ACADEMIC_PROFILES,
+				artifactBriefs: [],
+			}),
+		).rejects.toThrow("Invalid workflow plan");
 	});
 });

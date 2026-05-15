@@ -1,6 +1,6 @@
 import type { ArtifactBrief, ArtifactRef, WorkerProfile } from "@mariozechner/pi-agent-contracts";
 import type { LeadAgentTaskRequest } from "../index.js";
-import type { LeadTaskPlanningInput, WorkflowTemplate } from "./types.js";
+import type { LeadTaskPlanningInput } from "./types.js";
 
 export interface CreateLeadTaskPlanningInputOptions {
 	request: LeadAgentTaskRequest;
@@ -8,7 +8,6 @@ export interface CreateLeadTaskPlanningInputOptions {
 	sessionId: string;
 	profiles: readonly WorkerProfile[];
 	artifactBriefs?: ArtifactBrief[];
-	templateCandidates: WorkflowTemplate[];
 }
 
 export function createLeadTaskPlanningInput(options: CreateLeadTaskPlanningInputOptions): LeadTaskPlanningInput {
@@ -21,7 +20,6 @@ export function createLeadTaskPlanningInput(options: CreateLeadTaskPlanningInput
 		inputArtifacts: options.request.inputArtifacts ?? [],
 		profiles: options.profiles,
 		artifactBriefs: options.artifactBriefs ?? [],
-		templateCandidates: options.templateCandidates,
 	};
 }
 

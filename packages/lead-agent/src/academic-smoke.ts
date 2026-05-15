@@ -11,7 +11,7 @@ import {
 	MemoryArtifactStore,
 } from "@mariozechner/pi-artifact-core";
 import { createLeadAgentRuntime, type LeadAgentResult, type LeadAgentWorkerRunner } from "./index.js";
-import { createTemplateWorkflowPlanner, type WorkflowPlanner } from "./orchestration/index.js";
+import type { WorkflowPlanner } from "./orchestration/index.js";
 
 export interface AcademicSmokeCase {
 	id: string;
@@ -161,11 +161,19 @@ function deterministicWorkerRunner(store: ArtifactStore): LeadAgentWorkerRunner 
 }
 
 function createAcademicSmokePlanner(): WorkflowPlanner {
-	const templatePlanner = createTemplateWorkflowPlanner();
 	return {
 		async plan(input) {
 			if (input.taskId !== "mini-paperorchestra-inputs") {
-				return templatePlanner.plan(input);
+				return {
+					taskId: input.taskId,
+					sessionId: input.sessionId,
+					objective: input.objective,
+					rationale: "Smoke test: direct fallback for non-orchestrated cases.",
+					userVisibleSummary: "I will handle this directly.",
+					mode: "direct",
+					steps: [],
+					stopConditions: ["Final answer produced"],
+				};
 			}
 			return {
 				taskId: input.taskId,
