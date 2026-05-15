@@ -69,6 +69,20 @@ describe("RunResultComponent", () => {
 		expect(text).toContain("No review memo");
 	});
 
+	it("render includes the plan summary when available", () => {
+		const theme = createLeadTuiTheme();
+		const markdownTheme = createLeadMarkdownTheme();
+		const comp = new RunResultComponent(
+			makeView({
+				planSummary: "I will run a reviewer pass and return the accepted memo.",
+			}),
+			theme,
+			markdownTheme,
+		);
+		const text = comp.render(80).join("\n");
+		expect(text).toContain("reviewer pass and return the accepted memo");
+	});
+
 	it("render returns non-empty for direct dispatch (accepted undefined)", () => {
 		const theme = createLeadTuiTheme();
 		const markdownTheme = createLeadMarkdownTheme();

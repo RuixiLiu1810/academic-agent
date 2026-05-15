@@ -50,6 +50,21 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
 		],
 	},
 	{
+		id: "review-memo",
+		title: "Review Memo",
+		description: "Produce a severity-ordered review memo without entering revision planning.",
+		steps: [
+			{
+				id: "review-memo",
+				profileId: "reviewer",
+				objective: "Review the manuscript and produce a severity-ordered memo.",
+				expectedArtifactKinds: ["review-comment-map"],
+				expectedOutputs: ["review memo"],
+				acceptanceCriteria: ["Findings are severity ordered"],
+			},
+		],
+	},
+	{
 		id: "revision-response",
 		title: "Revision Response",
 		description: "Map review comments, plan revisions, and draft response text.",
@@ -95,6 +110,21 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
 			},
 		],
 	},
+	{
+		id: "outline-to-draft",
+		title: "Outline To Draft",
+		description: "Expand an accepted outline into a bounded draft.",
+		steps: [
+			{
+				id: "draft",
+				profileId: "writer",
+				objective: "Expand the accepted outline into a coherent draft.",
+				expectedArtifactKinds: ["draft-text"],
+				expectedOutputs: ["draft text"],
+				acceptanceCriteria: ["Style is consistent"],
+			},
+		],
+	},
 ];
 
 export function selectWorkflowTemplateCandidates(input: TemplateSelectionInput): WorkflowTemplate[] {
@@ -104,6 +134,9 @@ export function selectWorkflowTemplateCandidates(input: TemplateSelectionInput):
 		...input.inputArtifacts.map((artifact) => artifact.kind),
 	].join("\n");
 	const selected = WORKFLOW_TEMPLATES.filter((template) => {
+		if (template.id === "review-memo") {
+			return includesAny(text, ["review memo", "severity ordered", "review findings", "审阅", "审稿意见", "review"]);
+		}
 		if (template.id === "citation-audit") {
 			return includesAny(text, ["citation", "reference", "引用", "参考文献"]);
 		}
@@ -114,7 +147,10 @@ export function selectWorkflowTemplateCandidates(input: TemplateSelectionInput):
 			return includesAny(text, ["reviewer", "comment", "response", "退修", "审稿", "意见"]);
 		}
 		if (template.id === "evidence-synthesis") {
-			return includesAny(text, ["evidence", "literature", "文献", "证据", "outline"]);
+			return includesAny(text, ["evidence", "literature", "文献", "证据", "meta-analysis", "综述", "outline"]);
+		}
+		if (template.id === "outline-to-draft") {
+			return includesAny(text, ["draft", "first draft", "初稿", "写一版", "扩写", "提纲", "outline"]);
 		}
 		return false;
 	});

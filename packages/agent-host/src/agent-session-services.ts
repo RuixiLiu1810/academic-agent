@@ -54,6 +54,7 @@ export interface CreateAgentSessionOptions {
 	settingsManager?: SettingsManager;
 	modelRegistry?: ModelRegistry;
 	resourceLoader?: ResourceLoader;
+	resourceLoaderOptions?: Omit<DefaultResourceLoaderOptions, "cwd" | "agentDir" | "settingsManager">;
 	sessionManager?: SessionManager;
 	sessionStartEvent?: SessionStartEvent;
 	model?: Model<any>;
@@ -389,6 +390,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const resourceLoader =
 		options.resourceLoader ??
 		new DefaultResourceLoader({
+			...(options.resourceLoaderOptions ?? {}),
 			cwd,
 			agentDir,
 			settingsManager,

@@ -78,10 +78,10 @@ export function acceptanceIssuesForWorkerResult(
 			severity: "warning",
 		});
 	}
-	for (const question of workerResult.openQuestions) {
+	for (const q of workerResult.openQuestions) {
 		issues.push({
 			code: "worker_open_question",
-			message: question,
+			message: q.question,
 			severity: "info",
 		});
 	}

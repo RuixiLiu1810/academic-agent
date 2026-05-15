@@ -10,6 +10,7 @@ import type {
 	WorkflowStepResult,
 } from "@mariozechner/pi-agent-contracts";
 import { createExecutionTrace } from "@mariozechner/pi-agent-contracts";
+import type { ArtifactStore } from "@mariozechner/pi-artifact-core";
 import { createLeadAcceptanceReport } from "./acceptance.js";
 import type { LeadAgentWorkerRunner } from "./types.js";
 import type { LeadSessionWorkspace } from "./workspace.js";
@@ -19,8 +20,24 @@ export interface ExecuteWorkflowPlanOptions {
 	profiles: readonly WorkerProfile[];
 	workspace: LeadSessionWorkspace;
 	workerRunner: LeadAgentWorkerRunner;
+	artifactStore?: Pick<ArtifactStore, "get">;
+	onEvent?: (event: WorkflowExecutionEvent) => void;
 	constraints?: string[];
 	metadata?: JsonObject;
+}
+
+export interface WorkflowExecutionEvent {
+	type: "workflow_step_start" | "workflow_step_retry" | "workflow_step_complete";
+	taskId: string;
+	stepId: string;
+	profileId: string;
+	order: number;
+	totalSteps: number;
+	attempt: number;
+	message: string;
+	accepted?: boolean;
+	decision?: WorkflowStepResult["decision"]["kind"];
+	question?: string;
 }
 
 export interface WorkflowExecutionResult {
@@ -32,6 +49,9 @@ export interface WorkflowExecutionResult {
 	producedArtifacts: ArtifactRef[];
 	acceptanceReports: AcceptanceReport[];
 }
+
+const DEFAULT_RETRY_ATTEMPTS = 2;
+const MAX_RETRIEVAL_CHARS = 4000;
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
@@ -45,7 +65,9 @@ function createFailedWorkerResult(taskId: string, sessionId: string, error: unkn
 		summary: "Worker failed before producing an accepted result.",
 		producedArtifacts: [],
 		warnings: [message],
-		openQuestions: ["Retry with a narrower worker request or handle the task directly in the lead agent."],
+		openQuestions: [
+			{ question: "Retry with a narrower worker request or handle the task directly in the lead agent." },
+		],
 		executionTrace: createExecutionTrace(`lead-worker-failure-${taskId}`, sessionId),
 		failureReason: message,
 	};
@@ -88,6 +110,41 @@ function mergeArtifactRefs(left: readonly ArtifactRef[], right: readonly Artifac
 	return [...refs.values()];
 }
 
+function maxAttemptsForRequest(workerRequest: WorkerRequest): number {
+	return Math.max(workerRequest.retryPolicy?.maxAttempts ?? DEFAULT_RETRY_ATTEMPTS, 1);
+}
+
+function hasBlockingOpenQuestion(workerResult: WorkerResult): boolean {
+	return workerResult.openQuestions.some((q) => q.blocksExecution === true);
+}
+
+function questionForWorkerResult(workerResult: WorkerResult): string | undefined {
+	return workerResult.openQuestions.find((q) => q.blocksExecution === true)?.question;
+}
+
+function retrievedArtifactsForInput(
+	inputArtifacts: readonly ArtifactRef[],
+	artifactStore: Pick<ArtifactStore, "get"> | undefined,
+): JsonObject[] | undefined {
+	if (!artifactStore) {
+		return undefined;
+	}
+	const retrieved: JsonObject[] = [];
+	for (const artifact of inputArtifacts) {
+		const stored = artifactStore.get(artifact.id);
+		if (!stored || stored.content.length > MAX_RETRIEVAL_CHARS) {
+			continue;
+		}
+		retrieved.push({
+			id: stored.id,
+			kind: stored.kind,
+			title: stored.title ?? "",
+			content: stored.content,
+		});
+	}
+	return retrieved.length > 0 ? retrieved : undefined;
+}
+
 export async function executeWorkflowPlan(options: ExecuteWorkflowPlanOptions): Promise<WorkflowExecutionResult> {
 	const { plan, profiles, workspace, workerRunner } = options;
 	const stepResults: WorkflowStepResult[] = [];
@@ -107,24 +164,67 @@ export async function executeWorkflowPlan(options: ExecuteWorkflowPlanOptions): 
 	const orderedSteps = [...plan.steps].sort((a, b) => a.order - b.order);
 	for (const [stepIndex, step] of orderedSteps.entries()) {
 		const inputArtifacts = mergeArtifactRefs(step.inputArtifactRefs, carriedArtifacts);
+		const retrievedArtifacts = retrievedArtifactsForInput(inputArtifacts, options.artifactStore);
 		const workerRequest = workerRequestForStep(
 			{ ...plan, steps: orderedSteps },
 			stepIndex,
 			profiles,
 			inputArtifacts,
 			options.constraints ?? [],
-			options.metadata,
+			retrievedArtifacts
+				? {
+						...(options.metadata ?? {}),
+						retrievedArtifacts,
+					}
+				: options.metadata,
 		);
 		workspace.writeStepJson(plan.taskId, step.order, step.profileId, "worker-request.json", workerRequest);
 
 		let workerResult: WorkerResult;
-		try {
-			workerResult = await workerRunner(workerRequest);
-		} catch (error) {
-			workerResult = createFailedWorkerResult(workerRequest.taskId, plan.sessionId, error);
+		let acceptanceReport: AcceptanceReport;
+		let attempt = 0;
+		const maxAttempts = maxAttemptsForRequest(workerRequest);
+		while (true) {
+			attempt += 1;
+			options.onEvent?.({
+				type: "workflow_step_start",
+				taskId: plan.taskId,
+				stepId: step.id,
+				profileId: step.profileId,
+				order: step.order,
+				totalSteps: orderedSteps.length,
+				attempt,
+				message: `Step ${step.order}/${orderedSteps.length}: ${step.profileId}`,
+			});
+			try {
+				workerResult = await workerRunner(workerRequest);
+			} catch (error) {
+				workerResult = createFailedWorkerResult(workerRequest.taskId, plan.sessionId, error);
+			}
+
+			acceptanceReport = createLeadAcceptanceReport(workerRequest, workerResult);
+			if (acceptanceReport.accepted || hasBlockingOpenQuestion(workerResult) || attempt >= maxAttempts) {
+				break;
+			}
+			workspace.appendWorkflowLog({
+				type: "workflow_step_retry",
+				taskId: plan.taskId,
+				stepId: step.id,
+				attempt,
+				reason: "Worker result was not accepted and retry budget remains.",
+			});
+			options.onEvent?.({
+				type: "workflow_step_retry",
+				taskId: plan.taskId,
+				stepId: step.id,
+				profileId: step.profileId,
+				order: step.order,
+				totalSteps: orderedSteps.length,
+				attempt,
+				message: `Retrying step ${step.order}/${orderedSteps.length}: ${step.profileId}`,
+			});
 		}
 
-		const acceptanceReport = createLeadAcceptanceReport(workerRequest, workerResult);
 		const stepBriefs = workerResult.artifactBriefs ?? [];
 		workspace.writeStepJson(plan.taskId, step.order, step.profileId, "worker-result.json", workerResult);
 		workspace.writeStepJson(plan.taskId, step.order, step.profileId, "artifact-briefs.json", stepBriefs);
@@ -140,15 +240,21 @@ export async function executeWorkflowPlan(options: ExecuteWorkflowPlanOptions): 
 		artifactBriefs = [...artifactBriefs, ...stepBriefs];
 		carriedArtifacts = mergeArtifactRefs(carriedArtifacts, workerResult.producedArtifacts);
 		const isLastStep = stepIndex === orderedSteps.length - 1;
-		const decision = acceptanceReport.accepted
+		const decision = hasBlockingOpenQuestion(workerResult)
 			? {
-					kind: isLastStep ? ("synthesize" as const) : ("continue" as const),
-					reason: isLastStep ? "Final workflow step accepted." : "Workflow step accepted; continuing.",
+					kind: "ask_user" as const,
+					reason: "Worker reported a blocking open question.",
+					question: questionForWorkerResult(workerResult),
 				}
-			: {
-					kind: "stop" as const,
-					reason: "Workflow step was not accepted.",
-				};
+			: acceptanceReport.accepted
+				? {
+						kind: isLastStep ? ("synthesize" as const) : ("continue" as const),
+						reason: isLastStep ? "Final workflow step accepted." : "Workflow step accepted; continuing.",
+					}
+				: {
+						kind: "stop" as const,
+						reason: "Workflow step was not accepted.",
+					};
 
 		stepResults.push({
 			step,
@@ -158,8 +264,24 @@ export async function executeWorkflowPlan(options: ExecuteWorkflowPlanOptions): 
 			acceptanceReport,
 			decision,
 		});
+		options.onEvent?.({
+			type: "workflow_step_complete",
+			taskId: plan.taskId,
+			stepId: step.id,
+			profileId: step.profileId,
+			order: step.order,
+			totalSteps: orderedSteps.length,
+			attempt,
+			message:
+				decision.kind === "ask_user"
+					? `Step ${step.order}/${orderedSteps.length} is blocked: ${decision.question ?? decision.reason}`
+					: `Completed step ${step.order}/${orderedSteps.length}: ${step.profileId}`,
+			accepted: acceptanceReport.accepted,
+			decision: decision.kind,
+			question: decision.question,
+		});
 
-		if (!acceptanceReport.accepted) {
+		if (!acceptanceReport.accepted || decision.kind === "ask_user") {
 			accepted = false;
 			break;
 		}

@@ -65,7 +65,7 @@ WORKER_RESULT_JSON:
 			},
 		]);
 		expect(result.warnings).toEqual(["One source needs manual citation review."]);
-		expect(result.openQuestions).toEqual(["Should the lead agent revise the background section?"]);
+		expect(result.openQuestions).toEqual([{ question: "Should the lead agent revise the background section?" }]);
 		expect(result.structuredOutputs?.evidenceCount).toBe(3);
 		expect(result.structuredOutputs?.sessionId).toBe(harness.session.sessionId);
 	});

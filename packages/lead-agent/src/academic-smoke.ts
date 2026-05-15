@@ -72,9 +72,9 @@ export const DEFAULT_ACADEMIC_SMOKE_CASES: AcademicSmokeCase[] = [
 		objective: "Review the manuscript and reviewer comments, then produce severity ordered findings.",
 		fixtureFiles: ["manuscript_excerpt.md", "review_comments.md"],
 		expectedProfileId: "reviewer",
-		expectedStepProfileIds: ["reviewer", "reviser"],
+		expectedStepProfileIds: ["reviewer"],
 		expectedOutputs: ["review memo"],
-		artifactKinds: [ACADEMIC_ARTIFACT_KINDS.reviewCommentMap, ACADEMIC_ARTIFACT_KINDS.revisionPlan],
+		artifactKinds: [ACADEMIC_ARTIFACT_KINDS.reviewCommentMap],
 	},
 	{
 		id: "mini-paperorchestra-inputs",
@@ -248,6 +248,7 @@ export async function runAcademicSmokeSuite(
 	const runtime = createLeadAgentRuntime({
 		cwd: tempCwd,
 		artifactDir: options.artifactDir,
+		artifactStore: store,
 		workerRunner,
 		directRunner: async (request) => `Direct smoke synthesis: ${request.objective}`,
 		workflowPlanner: createAcademicSmokePlanner(),

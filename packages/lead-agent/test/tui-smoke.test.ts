@@ -19,6 +19,11 @@ describe("lead TUI smoke", () => {
 			profileId: undefined,
 			expectedOutputs: [],
 			runCount: 0,
+			model: undefined,
+			thinkingLevel: undefined,
+			totalInputTokens: 0,
+			totalOutputTokens: 0,
+			totalCost: 0,
 		});
 	});
 

@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createExecutionTrace, type WorkerResult } from "@mariozechner/pi-agent-contracts";
+import { createAcademicArtifact, MemoryArtifactStore } from "@mariozechner/pi-artifact-core";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ACADEMIC_PROFILES } from "../src/index.js";
 import { executeWorkflowPlan } from "../src/orchestration/executor.js";
@@ -80,6 +81,186 @@ describe("executeWorkflowPlan", () => {
 			expect(result.accepted).toBe(true);
 			expect(result.artifactBriefs.map((brief) => brief.kind)).toEqual(["claim-audit", "revision-plan"]);
 			expect(seenInputs).toEqual([[], ["claim-audit"]]);
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
+	});
+
+	it("retries a failed worker once before accepting the step", async () => {
+		const cwd = mkdtempSync(join(tmpdir(), "lead-executor-retry-"));
+		try {
+			const workspace = createLeadSessionWorkspace({ cwd, sessionId: "session-retry" });
+			let attempts = 0;
+			const result = await executeWorkflowPlan({
+				plan: {
+					taskId: "task-retry",
+					sessionId: "session-retry",
+					objective: "Retry the worker once.",
+					rationale: "The step should recover from a transient failure.",
+					userVisibleSummary: "I will retry once if the worker fails.",
+					mode: "workflow",
+					steps: [
+						{
+							id: "citation-audit",
+							order: 1,
+							profileId: "citation-checker",
+							objective: "Audit citations.",
+							inputArtifactRefs: [],
+							expectedArtifactKinds: ["claim-audit"],
+							expectedOutputs: ["citation audit"],
+							acceptanceCriteria: ["Unsupported claims are identified"],
+						},
+					],
+					stopConditions: ["Citation audit accepted"],
+				},
+				profiles: DEFAULT_ACADEMIC_PROFILES,
+				workspace,
+				workerRunner: async (request): Promise<WorkerResult> => {
+					attempts += 1;
+					if (attempts === 1) {
+						return {
+							taskId: request.taskId,
+							status: "failed",
+							summary: "first attempt failed",
+							producedArtifacts: [],
+							warnings: ["transient provider error"],
+							openQuestions: [],
+							executionTrace: createExecutionTrace("run-retry-1"),
+							failureReason: "transient provider error",
+						};
+					}
+					return {
+						taskId: request.taskId,
+						status: "success",
+						summary: "citation audit completed",
+						structuredOutputs: { expectedOutputs: request.expectedOutputs },
+						producedArtifacts: [],
+						warnings: [],
+						openQuestions: [],
+						executionTrace: createExecutionTrace("run-retry-2"),
+					};
+				},
+			});
+
+			expect(attempts).toBe(2);
+			expect(result.accepted).toBe(true);
+			expect(result.stepResults[0]?.decision.kind).toBe("synthesize");
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
+	});
+
+	it("asks the user when a step succeeds but returns a blocking open question", async () => {
+		const cwd = mkdtempSync(join(tmpdir(), "lead-executor-question-"));
+		try {
+			const workspace = createLeadSessionWorkspace({ cwd, sessionId: "session-question" });
+			const result = await executeWorkflowPlan({
+				plan: {
+					taskId: "task-question",
+					sessionId: "session-question",
+					objective: "Stop and ask the user for missing manuscript context.",
+					rationale: "The worker cannot continue without a missing attachment.",
+					userVisibleSummary: "I will ask for the missing manuscript if it blocks review.",
+					mode: "workflow",
+					steps: [
+						{
+							id: "review",
+							order: 1,
+							profileId: "reviewer",
+							objective: "Review the manuscript.",
+							inputArtifactRefs: [],
+							expectedArtifactKinds: ["review-comment-map"],
+							expectedOutputs: ["review memo"],
+							acceptanceCriteria: ["Findings are severity ordered"],
+						},
+					],
+					stopConditions: ["Review memo accepted"],
+				},
+				profiles: DEFAULT_ACADEMIC_PROFILES,
+				workspace,
+				workerRunner: async (request): Promise<WorkerResult> => ({
+					taskId: request.taskId,
+					status: "success",
+					summary: "review memo completed",
+					structuredOutputs: { expectedOutputs: request.expectedOutputs },
+					producedArtifacts: [],
+					warnings: [],
+					openQuestions: [{ question: "Need the full manuscript before final review.", blocksExecution: true }],
+					executionTrace: createExecutionTrace("run-question"),
+				}),
+			});
+
+			expect(result.accepted).toBe(false);
+			expect(result.stepResults[0]?.decision).toEqual({
+				kind: "ask_user",
+				reason: "Worker reported a blocking open question.",
+				question: "Need the full manuscript before final review.",
+			});
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
+	});
+
+	it("retrieves small artifact content for later workflow steps when a store is available", async () => {
+		const cwd = mkdtempSync(join(tmpdir(), "lead-executor-retrieval-"));
+		try {
+			const workspace = createLeadSessionWorkspace({ cwd, sessionId: "session-retrieval" });
+			const artifactStore = new MemoryArtifactStore();
+			const outlineArtifact = createAcademicArtifact(artifactStore, {
+				kind: "outline",
+				title: "Existing outline",
+				content: "I. Background\nII. Methods\nIII. Results",
+			});
+			const seenRetrievedContent: string[] = [];
+			await executeWorkflowPlan({
+				plan: {
+					taskId: "task-retrieval",
+					sessionId: "session-retrieval",
+					objective: "Expand the outline into a draft.",
+					rationale: "Later steps should be able to read small stored artifacts.",
+					userVisibleSummary: "I will read the outline and expand it into a draft.",
+					mode: "workflow",
+					steps: [
+						{
+							id: "draft",
+							order: 1,
+							profileId: "writer",
+							objective: "Expand the outline into a draft.",
+							inputArtifactRefs: [
+								{
+									id: outlineArtifact.id,
+									kind: outlineArtifact.kind,
+									uri: outlineArtifact.uri,
+									title: outlineArtifact.title,
+								},
+							],
+							expectedArtifactKinds: ["draft-text"],
+							expectedOutputs: ["draft text"],
+							acceptanceCriteria: ["Style is consistent"],
+						},
+					],
+					stopConditions: ["Draft accepted"],
+				},
+				profiles: DEFAULT_ACADEMIC_PROFILES,
+				workspace,
+				artifactStore,
+				workerRunner: async (request): Promise<WorkerResult> => {
+					const retrieved = (request.metadata?.retrievedArtifacts as Array<{ content: string }> | undefined) ?? [];
+					seenRetrievedContent.push(...retrieved.map((item) => item.content));
+					return {
+						taskId: request.taskId,
+						status: "success",
+						summary: "draft text completed",
+						structuredOutputs: { expectedOutputs: request.expectedOutputs },
+						producedArtifacts: [],
+						warnings: [],
+						openQuestions: [],
+						executionTrace: createExecutionTrace("run-retrieval"),
+					};
+				},
+			});
+
+			expect(seenRetrievedContent).toEqual(["I. Background\nII. Methods\nIII. Results"]);
 		} finally {
 			rmSync(cwd, { recursive: true, force: true });
 		}

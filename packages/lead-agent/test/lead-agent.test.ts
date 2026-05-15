@@ -97,6 +97,231 @@ Use the custom audit role.
 		expect(runtime.sessionManager.getEntries().some((entry) => entry.type === "custom")).toBe(true);
 	});
 
+	it("runs the workflow planner for writing requests when the planner selects a workflow", async () => {
+		let plannerCalls = 0;
+		const runtime = createLeadAgentRuntime({
+			cwd: makeTempDir(),
+			directRunner: async () => {
+				throw new Error("direct runner should not run");
+			},
+			workflowPlanner: {
+				async plan(input) {
+					plannerCalls += 1;
+					return {
+						taskId: input.taskId,
+						sessionId: input.sessionId,
+						objective: input.objective,
+						rationale: "Outline-to-draft workflow is needed for this writing request.",
+						userVisibleSummary: "I will build an outline and then draft the text.",
+						mode: "workflow",
+						steps: [
+							{
+								id: "outline",
+								order: 1,
+								profileId: "writer",
+								objective: "Produce a bounded outline.",
+								inputArtifactRefs: input.inputArtifacts,
+								expectedArtifactKinds: ["outline"],
+								expectedOutputs: ["outline"],
+								acceptanceCriteria: ["Claims are bounded"],
+							},
+						],
+						stopConditions: ["Outline accepted"],
+					};
+				},
+			},
+			workerRunner: async (request) => ({
+				taskId: request.taskId,
+				status: "success",
+				summary: "outline completed",
+				structuredOutputs: { expectedOutputs: request.expectedOutputs },
+				producedArtifacts: [],
+				warnings: [],
+				openQuestions: [],
+				executionTrace: createExecutionTrace("run-writing-planner"),
+			}),
+		});
+
+		const result = await runtime.run({
+			taskId: "task-writing-planner",
+			objective: "写一版引言初稿，先整理提纲，再生成学术中文草稿。",
+			expectedOutputs: ["outline"],
+		});
+
+		expect(plannerCalls).toBe(1);
+		expect(result.decision.mode).toBe("worker");
+		expect(result.workflowPlan?.steps.map((step) => step.profileId)).toEqual(["writer"]);
+		expect(result.finalOutput).toContain("outline completed");
+	});
+
+	it("returns a clarification result before running workers when the planner blocks execution", async () => {
+		const runtime = createLeadAgentRuntime({
+			cwd: makeTempDir(),
+			directRunner: async () => {
+				throw new Error("direct runner should not run");
+			},
+			workflowPlanner: {
+				async plan(input) {
+					return {
+						taskId: input.taskId,
+						sessionId: input.sessionId,
+						objective: input.objective,
+						rationale: "The planner needs the target journal before continuing.",
+						userVisibleSummary: "I need one detail before I can plan the workflow.",
+						mode: "workflow",
+						steps: [
+							{
+								id: "review",
+								order: 1,
+								profileId: "reviewer",
+								objective: "Review the draft once the journal target is known.",
+								inputArtifactRefs: [],
+								expectedArtifactKinds: ["review-comment-map"],
+								expectedOutputs: ["review memo"],
+								acceptanceCriteria: ["Findings are severity ordered"],
+							},
+						],
+						stopConditions: ["Review memo accepted"],
+						requiresClarification: {
+							question: "目标期刊是什么？",
+							reason: "不同期刊会改变审稿标准和输出格式。",
+							blocksExecution: true,
+						},
+					};
+				},
+			},
+			workerRunner: async () => {
+				throw new Error("worker should not run");
+			},
+		});
+
+		const result = await runtime.run({
+			taskId: "task-clarification",
+			objective: "请帮我审阅并重写 response letter。",
+		});
+
+		expect(result.clarification).toEqual({
+			question: "目标期刊是什么？",
+			reason: "不同期刊会改变审稿标准和输出格式。",
+			blocksExecution: true,
+		});
+		expect(result.finalOutput).toContain("目标期刊是什么？");
+		expect(result.workerResult).toBeUndefined();
+		expect(result.acceptanceReport).toBeUndefined();
+	});
+
+	it("emits workflow progress events for non-direct runs", async () => {
+		const events: Array<{ type: string }> = [];
+		const runtime = createLeadAgentRuntime({
+			cwd: makeTempDir(),
+			workflowPlanner: {
+				async plan(input) {
+					return {
+						taskId: input.taskId,
+						sessionId: input.sessionId,
+						objective: input.objective,
+						rationale: "The request should run a one-step review workflow.",
+						userVisibleSummary: "I will run a reviewer pass and return the accepted memo.",
+						mode: "workflow",
+						steps: [
+							{
+								id: "review",
+								order: 1,
+								profileId: "reviewer",
+								objective: "Review the manuscript.",
+								inputArtifactRefs: input.inputArtifacts,
+								expectedArtifactKinds: ["review-comment-map"],
+								expectedOutputs: ["review memo"],
+								acceptanceCriteria: ["Findings are severity ordered"],
+							},
+						],
+						stopConditions: ["Review memo accepted"],
+					};
+				},
+			},
+			workerRunner: async (request) => ({
+				taskId: request.taskId,
+				status: "success",
+				summary: "review memo completed",
+				structuredOutputs: { expectedOutputs: request.expectedOutputs },
+				producedArtifacts: [],
+				warnings: [],
+				openQuestions: [],
+				executionTrace: createExecutionTrace("run-workflow-events"),
+			}),
+		});
+
+		await runtime.run({
+			taskId: "task-workflow-events",
+			objective: "审阅这篇稿子并给出 review memo。",
+			expectedOutputs: ["review memo"],
+			onEvent: ((event: { type: string }) => {
+				events.push(event);
+			}) as never,
+		} as LeadAgentTaskRequest & { onEvent: (event: { type: string }) => void });
+
+		expect(events.map((event) => event.type)).toEqual([
+			"plan_summary",
+			"workflow_step_start",
+			"workflow_step_complete",
+		]);
+	});
+
+	it("records a planner override event when an explicit profile forces fallback planning", async () => {
+		const sessionManager = SessionManager.inMemory(makeTempDir());
+		const runtime = createLeadAgentRuntime({
+			cwd: makeTempDir(),
+			sessionManager,
+			workflowPlanner: {
+				async plan(input) {
+					return {
+						taskId: input.taskId,
+						sessionId: input.sessionId,
+						objective: input.objective,
+						rationale: "Planner chose a reviewer workflow.",
+						userVisibleSummary: "I will review the manuscript.",
+						mode: "workflow",
+						steps: [
+							{
+								id: "review",
+								order: 1,
+								profileId: "reviewer",
+								objective: "Review the manuscript.",
+								inputArtifactRefs: [],
+								expectedArtifactKinds: ["review-comment-map"],
+								expectedOutputs: ["review memo"],
+								acceptanceCriteria: ["Findings are severity ordered"],
+							},
+						],
+						stopConditions: ["Review memo accepted"],
+					};
+				},
+			},
+			workerRunner: async (request) => ({
+				taskId: request.taskId,
+				status: "success",
+				summary: "methods audit completed",
+				structuredOutputs: { expectedOutputs: request.expectedOutputs },
+				producedArtifacts: [],
+				warnings: [],
+				openQuestions: [],
+				executionTrace: createExecutionTrace("run-planner-override"),
+			}),
+		});
+
+		await runtime.run({
+			taskId: "task-planner-override",
+			objective: "Review this manuscript.",
+			profileId: "method-auditor",
+			expectedOutputs: ["methods audit"],
+		});
+
+		const customEntries = sessionManager.getEntries().filter((entry) => entry.type === "custom");
+		expect(
+			customEntries.some((entry) => entry.type === "custom" && entry.customType === "lead-agent.planner_override"),
+		).toBe(true);
+	});
+
 	it("dispatches separable research tasks to a worker and accepts the result", async () => {
 		const workerResult: WorkerResult = {
 			taskId: "task-2",

@@ -126,7 +126,7 @@ describe("agent contracts", () => {
 				},
 			],
 			warnings: [],
-			openQuestions: ["Should the lead agent revise section 2.1?"],
+			openQuestions: [{ question: "Should the lead agent revise section 2.1?", blocksExecution: false }],
 			executionTrace: {
 				runId: "run-1",
 				sessionId: "session-1",

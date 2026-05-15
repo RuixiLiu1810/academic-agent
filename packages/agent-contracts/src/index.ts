@@ -83,6 +83,15 @@ export interface WorkerRequest {
 
 export type WorkerResultStatus = "success" | "failed" | "cancelled";
 
+export interface WorkerOpenQuestion {
+	question: string;
+	/**
+	 * When true the executor will stop workflow execution and surface this question to the user.
+	 * When false (default) the question is advisory and does not interrupt the workflow.
+	 */
+	blocksExecution?: boolean;
+}
+
 export interface WorkerResult {
 	taskId: string;
 	status: WorkerResultStatus;
@@ -91,7 +100,7 @@ export interface WorkerResult {
 	producedArtifacts: ArtifactRef[];
 	artifactBriefs?: ArtifactBrief[];
 	warnings: string[];
-	openQuestions: string[];
+	openQuestions: WorkerOpenQuestion[];
 	executionTrace: ExecutionTrace;
 	failureReason?: string;
 }
@@ -314,7 +323,18 @@ export const WorkerResultSchema: JsonObject = {
 		producedArtifacts: { type: "array", items: ArtifactRefSchema },
 		artifactBriefs: { type: "array", items: ArtifactBriefSchema },
 		warnings: stringArraySchema,
-		openQuestions: stringArraySchema,
+		openQuestions: {
+			type: "array",
+			items: {
+				type: "object",
+				required: ["question"],
+				properties: {
+					question: { type: "string" },
+					blocksExecution: { type: "boolean" },
+				},
+				additionalProperties: false,
+			},
+		},
 		executionTrace: ExecutionTraceSchema,
 		failureReason: { type: "string" },
 	},
@@ -436,6 +456,18 @@ function isJsonObject(value: unknown): value is JsonObject {
 
 function isStringArray(value: unknown): value is string[] {
 	return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
+function isWorkerOpenQuestion(value: unknown): value is WorkerOpenQuestion {
+	return (
+		isRecord(value) &&
+		typeof value.question === "string" &&
+		(value.blocksExecution === undefined || typeof value.blocksExecution === "boolean")
+	);
+}
+
+function isWorkerOpenQuestionArray(value: unknown): value is WorkerOpenQuestion[] {
+	return Array.isArray(value) && value.every(isWorkerOpenQuestion);
 }
 
 function hasOptionalString(value: Record<string, unknown>, key: string): boolean {
@@ -598,7 +630,7 @@ export function isWorkerResult(value: unknown): value is WorkerResult {
 		isArtifactRefArray(value.producedArtifacts) &&
 		(value.artifactBriefs === undefined || isArtifactBriefArray(value.artifactBriefs)) &&
 		isStringArray(value.warnings) &&
-		isStringArray(value.openQuestions) &&
+		isWorkerOpenQuestionArray(value.openQuestions) &&
 		isExecutionTrace(value.executionTrace) &&
 		hasOptionalString(value, "failureReason")
 	);

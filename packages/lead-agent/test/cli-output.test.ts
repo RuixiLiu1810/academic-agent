@@ -8,6 +8,16 @@ function resultFixture(): LeadAgentResult {
 		taskId: "task-cli-output",
 		sessionId: "session-1",
 		finalOutput: "citation audit completed",
+		workflowPlan: {
+			taskId: "task-cli-output",
+			sessionId: "session-1",
+			objective: "Review the manuscript evidence.",
+			rationale: "Run the citation audit before synthesis.",
+			userVisibleSummary: "I will run a citation audit and then return the accepted result.",
+			mode: "workflow",
+			steps: [],
+			stopConditions: ["Citation audit accepted"],
+		},
 		decision: {
 			mode: "worker",
 			workerType: "citation-checker",
@@ -64,6 +74,7 @@ describe("lead-agent CLI output", () => {
 		const markdown = renderLeadAgentMarkdown(createLeadAgentRunView(resultFixture()));
 
 		expect(markdown).toContain("# Lead Agent Result");
+		expect(markdown).toContain("citation audit and then return the accepted result");
 		expect(markdown).toContain("citation audit completed");
 		expect(markdown).toContain("- Decision: worker/citation-checker");
 		expect(markdown).toContain("- Accepted: yes");

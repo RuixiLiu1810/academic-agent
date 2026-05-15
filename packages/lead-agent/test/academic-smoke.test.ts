@@ -23,6 +23,10 @@ describe("academic workflow smoke suite", () => {
 			expectedStepProfileIds: ["researcher", "writer"],
 			artifactKinds: ["evidence-table", "outline"],
 		});
+		expect(DEFAULT_ACADEMIC_SMOKE_CASES.find((testCase) => testCase.id === "review-memo")).toMatchObject({
+			expectedStepProfileIds: ["reviewer"],
+			artifactKinds: ["review-comment-map"],
+		});
 	});
 
 	it("passes routing, acceptance, and artifact gates with deterministic workers", async () => {
@@ -41,13 +45,14 @@ describe("academic workflow smoke suite", () => {
 			"claim-audit",
 			"revision-plan",
 			"review-comment-map",
-			"revision-plan",
 			"evidence-table",
 			"outline",
 		]);
 		const paperOrchestraCase = result.results.find(
 			(caseResult) => caseResult.caseId === "mini-paperorchestra-inputs",
 		);
+		const reviewMemoCase = result.results.find((caseResult) => caseResult.caseId === "review-memo");
+		expect(reviewMemoCase?.result.workflowPlan?.steps.map((step) => step.profileId)).toEqual(["reviewer"]);
 		expect(paperOrchestraCase?.result.workflowPlan?.steps.map((step) => step.profileId)).toEqual([
 			"researcher",
 			"writer",
@@ -65,7 +70,7 @@ describe("academic workflow smoke suite", () => {
 
 			expect(result.passed).toBe(true);
 			expect(result.manifestPath).toBe(join(tempDir, "artifacts.json"));
-			expect(result.artifactRefs).toHaveLength(6);
+			expect(result.artifactRefs).toHaveLength(5);
 		} finally {
 			rmSync(tempDir, { recursive: true, force: true });
 		}

@@ -2,9 +2,21 @@ import type { WorkflowPlan } from "@mariozechner/pi-agent-contracts";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ACADEMIC_PROFILES } from "../src/index.js";
 import { createFauxWorkflowPlanner, validateWorkflowPlan } from "../src/orchestration/planner.js";
-import { selectWorkflowTemplateCandidates } from "../src/orchestration/templates.js";
+import { selectWorkflowTemplateCandidates, WORKFLOW_TEMPLATES } from "../src/orchestration/templates.js";
 
 describe("workflow planner", () => {
+	it("defines the full template inventory from the orchestration spec", () => {
+		expect(WORKFLOW_TEMPLATES.map((template) => template.id)).toEqual([
+			"direct-writing",
+			"citation-audit",
+			"method-audit",
+			"review-memo",
+			"revision-response",
+			"evidence-synthesis",
+			"outline-to-draft",
+		]);
+	});
+
 	it("selects templates only as candidates", () => {
 		const candidates = selectWorkflowTemplateCandidates({
 			objective: "Review reviewer comments and draft a response strategy.",
@@ -14,6 +26,22 @@ describe("workflow planner", () => {
 
 		expect(candidates.map((candidate) => candidate.id)).toContain("revision-response");
 		expect(candidates[0]?.steps.length).toBeGreaterThan(0);
+	});
+
+	it("matches review and writing templates from natural-language objectives", () => {
+		const reviewCandidates = selectWorkflowTemplateCandidates({
+			objective: "Please produce a severity ordered review memo for this manuscript.",
+			expectedOutputs: ["review memo"],
+			inputArtifacts: [],
+		});
+		const writingCandidates = selectWorkflowTemplateCandidates({
+			objective: "写一版学术中文初稿，基于现有提纲扩写成完整 draft。",
+			expectedOutputs: ["draft text"],
+			inputArtifacts: [{ id: "outline-1", kind: "outline", uri: "memory://outline-1" }],
+		});
+
+		expect(reviewCandidates.map((candidate) => candidate.id)).toContain("review-memo");
+		expect(writingCandidates.map((candidate) => candidate.id)).toContain("outline-to-draft");
 	});
 
 	it("validates profile ids, duplicate steps, and direct plans", () => {

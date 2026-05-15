@@ -6,6 +6,7 @@ export interface LeadAgentRunView {
 	sessionId: string;
 	decision: string;
 	accepted?: boolean;
+	planSummary?: string;
 	finalOutput: string;
 	issues: Array<{ severity: string; code: string; message: string }>;
 	artifacts: ArtifactRef[];
@@ -23,16 +24,21 @@ export function createLeadAgentRunView(
 	options: LeadAgentRunViewOptions = {},
 ): LeadAgentRunView {
 	const profileSuffix = result.decision.profileId ? `/${result.decision.profileId}` : "";
+	const openQuestions = (result.workerResult?.openQuestions ?? []).map((q) => q.question);
+	if (result.clarification?.question) {
+		openQuestions.unshift(result.clarification.question);
+	}
 	return {
 		taskId: result.taskId,
 		sessionId: result.sessionId,
 		decision: `${result.decision.mode}${profileSuffix}`,
 		accepted: result.acceptanceReport?.accepted,
+		planSummary: result.workflowPlan?.userVisibleSummary,
 		finalOutput: result.finalOutput,
 		issues: result.acceptanceReport?.issues ?? [],
 		artifacts: result.workerResult?.producedArtifacts ?? [],
 		warnings: result.workerResult?.warnings ?? [],
-		openQuestions: result.workerResult?.openQuestions ?? [],
+		openQuestions,
 		artifactManifestPath: options.artifactManifestPath,
 	};
 }
@@ -48,6 +54,7 @@ export function renderLeadAgentMarkdown(view: LeadAgentRunView): string {
 	const lines = [
 		"# Lead Agent Result",
 		"",
+		...(view.planSummary ? [view.planSummary, ""] : []),
 		view.finalOutput,
 		"",
 		"## Run",

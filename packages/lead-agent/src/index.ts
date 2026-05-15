@@ -7,9 +7,10 @@ import type {
 	ArtifactRef,
 	JsonObject,
 	WorkerProfile,
-	WorkerRequest,
 	WorkerResult,
+	WorkflowClarification,
 	WorkflowPlan,
+	WorkflowPlanMode,
 } from "@mariozechner/pi-agent-contracts";
 import {
 	type AgentHostSessionEvent,
@@ -17,14 +18,17 @@ import {
 	type ModelRegistry,
 	SessionManager,
 } from "@mariozechner/pi-agent-host";
+import type { ArtifactStore } from "@mariozechner/pi-artifact-core";
 import {
 	createLeadSessionWorkspace,
 	createLeadTaskPlanningInput,
 	createTemplateWorkflowPlanner,
 	executeWorkflowPlan,
+	type LeadAgentWorkerRunner,
 	type LeadSessionWorkspace,
 	selectWorkflowTemplateCandidates,
 	synthesizeWorkflowFinalOutput,
+	type WorkflowExecutionEvent,
 	type WorkflowPlanner,
 } from "./orchestration/index.js";
 import { buildLeadDirectMessage, LEAD_AGENT_SYSTEM_PROMPT } from "./prompts.js";
@@ -50,9 +54,32 @@ export interface LeadAgentTaskRequest {
 	taskType?: AcademicTaskType;
 	profileId?: string;
 	dispatchMode?: LeadAgentDispatchMode;
-	/** Called for each session event during a direct run. Used for live TUI streaming. */
+	/** Called for progress updates across direct and workflow runs. */
+	onEvent?: (event: LeadAgentRunEvent) => void;
+	/** @deprecated Use onEvent instead. */
 	onDirectRunEvent?: (event: AgentHostSessionEvent) => void;
 }
+
+export type LeadAgentRunEvent =
+	| {
+			type: "plan_summary";
+			taskId: string;
+			sessionId: string;
+			mode: WorkflowPlanMode;
+			stepCount: number;
+			summary: string;
+	  }
+	| {
+			type: "clarification_required";
+			taskId: string;
+			sessionId: string;
+			clarification: WorkflowClarification;
+	  }
+	| {
+			type: "direct_session";
+			event: AgentHostSessionEvent;
+	  }
+	| WorkflowExecutionEvent;
 
 export interface LeadAgentDecision {
 	mode: "direct" | "worker";
@@ -66,14 +93,14 @@ export interface LeadAgentResult {
 	finalOutput: string;
 	decision: LeadAgentDecision;
 	sessionId: string;
+	clarification?: WorkflowClarification;
 	workflowPlan?: WorkflowPlan;
 	artifactBriefs?: ArtifactBrief[];
 	acceptanceReport?: AcceptanceReport;
 	workerResult?: WorkerResult;
 }
-
-export type LeadAgentWorkerRunner = (request: WorkerRequest) => Promise<WorkerResult>;
 export type LeadAgentDirectRunner = (request: LeadAgentTaskRequest) => Promise<string>;
+export type { LeadAgentWorkerRunner } from "./orchestration/index.js";
 
 export interface LeadAgentRuntimeOptions {
 	workerRunner?: LeadAgentWorkerRunner;
@@ -81,6 +108,7 @@ export interface LeadAgentRuntimeOptions {
 	workflowPlanner?: WorkflowPlanner;
 	workspace?: LeadSessionWorkspace;
 	artifactDir?: string;
+	artifactStore?: Pick<ArtifactStore, "get">;
 	confirmPlan?: boolean;
 	profiles?: WorkerProfile[];
 	sessionManager?: SessionManager;
@@ -416,6 +444,40 @@ async function synthesizeDirect(
 	};
 }
 
+function createClarificationResult(options: {
+	taskId: string;
+	sessionId: string;
+	decision: LeadAgentDecision;
+	workflowPlan: WorkflowPlan;
+	clarification: WorkflowClarification;
+}): LeadAgentResult {
+	return {
+		taskId: options.taskId,
+		sessionId: options.sessionId,
+		decision: options.decision,
+		finalOutput: options.clarification.question,
+		clarification: options.clarification,
+		workflowPlan: options.workflowPlan,
+		artifactBriefs: [],
+	};
+}
+
+function emitPlanSummary(
+	request: LeadAgentTaskRequest,
+	workflowPlan: WorkflowPlan,
+	taskId: string,
+	sessionId: string,
+): void {
+	request.onEvent?.({
+		type: "plan_summary",
+		taskId,
+		sessionId,
+		mode: workflowPlan.mode,
+		stepCount: workflowPlan.steps.length,
+		summary: workflowPlan.userVisibleSummary,
+	});
+}
+
 /**
  * @deprecated Import buildLeadDirectMessage from "./prompts.js" instead.
  * Kept for backward compatibility.
@@ -472,15 +534,21 @@ function createDefaultDirectRunner(
 				thinkingLevel: thinkingLevelRef.value,
 				tools: toolsRef.value,
 				noTools: toolsRef.value ? undefined : noToolsRef.value,
+				resourceLoaderOptions: {
+					systemPromptOverride: () => LEAD_AGENT_SYSTEM_PROMPT,
+				},
 			});
-			session.agent.state.systemPrompt = LEAD_AGENT_SYSTEM_PROMPT;
 			cachedSession = session;
 			resetRef.value = false;
 		}
+		const onEvent = request.onEvent;
 		const onDirectRunEvent = request.onDirectRunEvent;
 		let unsub: (() => void) | undefined;
-		if (onDirectRunEvent) {
-			unsub = cachedSession.subscribe(onDirectRunEvent);
+		if (onEvent || onDirectRunEvent) {
+			unsub = cachedSession.subscribe((event) => {
+				onDirectRunEvent?.(event);
+				onEvent?.({ type: "direct_session", event });
+			});
 		}
 		try {
 			await cachedSession.prompt(buildLeadDirectMessage(request));
@@ -593,8 +661,9 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			profileId: decision.profileId ?? null,
 			reason: decision.reason,
 		});
-		if (decision.mode === "direct") {
+		if (request.dispatchMode === "direct") {
 			const workflowPlan = createDirectWorkflowPlan(taskId, sessionId, request);
+			emitPlanSummary(request, workflowPlan, taskId, sessionId);
 			const result = await synthesizeDirect(taskId, sessionId, request, decision, directRunner);
 			result.workflowPlan = workflowPlan;
 			recordLeadAssistantMessage(sessionManager, result.finalOutput);
@@ -620,12 +689,56 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 		});
 		let workflowPlan = await workflowPlanner.plan(planningInput);
 		if (
-			workflowPlan.mode === "direct" ||
-			(request.profileId && !workflowPlan.steps.some((step) => step.profileId === request.profileId))
+			request.profileId &&
+			!workflowPlan.steps.some((step) => step.profileId === request.profileId) &&
+			workflowPlan.steps.length <= 1
 		) {
+			recordLeadEvent(sessionManager, "lead-agent.planner_override", {
+				taskId,
+				requestedProfileId: request.profileId,
+				plannedMode: workflowPlan.mode,
+				plannedStepProfileIds: workflowPlan.steps.map((step) => step.profileId),
+				reason: "Explicit profileId was not present in planner output; falling back to a single-step workflow.",
+			});
 			workflowPlan = createSingleStepWorkflowPlan(taskId, sessionId, request, decision, profiles);
 		}
 		const workflowDecision = decisionForWorkflowPlan(workflowPlan, decision);
+		emitPlanSummary(request, workflowPlan, taskId, sessionId);
+		const clarification = workflowPlan.requiresClarification;
+		if (clarification?.blocksExecution) {
+			request.onEvent?.({
+				type: "clarification_required",
+				taskId,
+				sessionId,
+				clarification,
+			});
+			const result = createClarificationResult({
+				taskId,
+				sessionId,
+				decision: workflowDecision,
+				workflowPlan,
+				clarification,
+			});
+			recordLeadAssistantMessage(sessionManager, result.finalOutput);
+			recordLeadEvent(sessionManager, "lead-agent.clarification", {
+				taskId,
+				question: clarification.question,
+				reason: clarification.reason,
+				blocksExecution: clarification.blocksExecution,
+			});
+			return result;
+		}
+		if (workflowPlan.mode === "direct") {
+			const result = await synthesizeDirect(taskId, sessionId, request, workflowDecision, directRunner);
+			result.workflowPlan = workflowPlan;
+			recordLeadAssistantMessage(sessionManager, result.finalOutput);
+			recordLeadEvent(sessionManager, "lead-agent.result", {
+				taskId,
+				finalOutput: result.finalOutput,
+				accepted: true,
+			});
+			return result;
+		}
 		recordLeadEvent(sessionManager, "lead-agent.workflow_plan", {
 			taskId,
 			mode: workflowPlan.mode,
@@ -644,6 +757,8 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			profiles,
 			workspace,
 			workerRunner,
+			artifactStore: options.artifactStore ?? workspace.store,
+			onEvent: request.onEvent,
 			constraints: request.constraints ?? [],
 			metadata: request.metadata,
 		});

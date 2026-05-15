@@ -3,6 +3,7 @@ import type {
 	ExecutionTrace,
 	JsonObject,
 	JsonValue,
+	WorkerOpenQuestion,
 	WorkerRequest,
 	WorkerResult,
 } from "@mariozechner/pi-agent-contracts";
@@ -26,7 +27,7 @@ interface ParsedWorkerOutput {
 	structuredOutputs?: JsonObject;
 	producedArtifacts: ArtifactRef[];
 	warnings: string[];
-	openQuestions: string[];
+	openQuestions: WorkerOpenQuestion[];
 	parseWarning?: string;
 }
 
@@ -196,7 +197,7 @@ function parseWorkerOutput(text: string): ParsedWorkerOutput {
 		structuredOutputs: isJsonObject(parsed.structuredOutputs) ? parsed.structuredOutputs : undefined,
 		producedArtifacts,
 		warnings: isStringArray(parsed.warnings) ? parsed.warnings : [],
-		openQuestions: isStringArray(parsed.openQuestions) ? parsed.openQuestions : [],
+		openQuestions: isStringArray(parsed.openQuestions) ? parsed.openQuestions.map((q) => ({ question: q })) : [],
 		parseWarning:
 			Array.isArray(parsed.producedArtifacts) && producedArtifacts.length !== parsed.producedArtifacts.length
 				? "WORKER_RESULT_JSON contained invalid artifact refs."

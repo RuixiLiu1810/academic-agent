@@ -1,4 +1,4 @@
-import type { AgentHostSessionEvent, ModelRegistry } from "@mariozechner/pi-agent-host";
+import type { ModelRegistry } from "@mariozechner/pi-agent-host";
 import type { SelectListTheme } from "@mariozechner/pi-tui";
 import {
 	CancellableLoader,
@@ -14,7 +14,13 @@ import {
 } from "@mariozechner/pi-tui";
 import type { LeadAgentRunView } from "../../cli/output.js";
 import { createLeadAgentRunView } from "../../cli/output.js";
-import type { AcademicTaskType, LeadAgentModel, LeadAgentRuntime, ThinkingLevel } from "../../index.js";
+import type {
+	AcademicTaskType,
+	LeadAgentModel,
+	LeadAgentRunEvent,
+	LeadAgentRuntime,
+	ThinkingLevel,
+} from "../../index.js";
 import { FooterComponent } from "./components/footer.js";
 import { createHeaderComponent } from "./components/header.js";
 import {
@@ -334,6 +340,13 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 		// Streaming assistant message (live-updated during the run)
 		const streamingComponent = new StreamingAssistantMessageComponent(theme, markdownTheme);
 		chatContainer.addChild(streamingComponent);
+		const workflowProgressLines: string[] = [];
+		let assistantText = "";
+		const updateStreamingText = () => {
+			const parts = [workflowProgressLines.join("\n"), assistantText].filter((part) => part.trim().length > 0);
+			streamingComponent.update(parts.join("\n\n"), theme);
+			tui.requestRender();
+		};
 
 		// Show spinner
 		const loader = new CancellableLoader(tui, theme.accent, theme.dim, "Running… (escape to interrupt)");
@@ -349,27 +362,48 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 				taskType: state.taskType,
 				profileId: state.profileId,
 				expectedOutputs: state.expectedOutputs.length > 0 ? state.expectedOutputs : undefined,
-				onDirectRunEvent: (event: AgentHostSessionEvent) => {
-					if (event.type === "message_update" && event.message.role === "assistant") {
-						const parts: string[] = [];
-						for (const content of event.message.content) {
-							if (content.type === "text" && content.text.length > 0) {
-								parts.push(content.text);
+				onEvent: (event: LeadAgentRunEvent) => {
+					if (event.type === "direct_session") {
+						if (event.event.type === "message_update" && event.event.message.role === "assistant") {
+							const parts: string[] = [];
+							for (const content of event.event.message.content) {
+								if (content.type === "text" && content.text.length > 0) {
+									parts.push(content.text);
+								}
+							}
+							if (parts.length > 0) {
+								assistantText = parts.join("");
+								updateStreamingText();
+							}
+						} else if (event.event.type === "message_end" && event.event.message.role === "assistant") {
+							const usage = (
+								event.event.message as { usage?: { input: number; output: number; cost?: { total: number } } }
+							).usage;
+							if (usage) {
+								state.totalInputTokens += usage.input;
+								state.totalOutputTokens += usage.output;
+								state.totalCost += usage.cost?.total ?? 0;
 							}
 						}
-						if (parts.length > 0) {
-							streamingComponent.update(parts.join(""), theme);
-							tui.requestRender();
-						}
-					} else if (event.type === "message_end" && event.message.role === "assistant") {
-						const usage = (
-							event.message as { usage?: { input: number; output: number; cost?: { total: number } } }
-						).usage;
-						if (usage) {
-							state.totalInputTokens += usage.input;
-							state.totalOutputTokens += usage.output;
-							state.totalCost += usage.cost?.total ?? 0;
-						}
+						return;
+					}
+					if (event.type === "plan_summary") {
+						workflowProgressLines.push(event.summary);
+						updateStreamingText();
+						return;
+					}
+					if (event.type === "clarification_required") {
+						workflowProgressLines.push(event.clarification.question);
+						updateStreamingText();
+						return;
+					}
+					if (
+						event.type === "workflow_step_start" ||
+						event.type === "workflow_step_retry" ||
+						event.type === "workflow_step_complete"
+					) {
+						workflowProgressLines.push(event.message);
+						updateStreamingText();
 					}
 				},
 			});
