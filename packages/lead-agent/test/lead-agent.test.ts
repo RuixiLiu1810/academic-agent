@@ -71,6 +71,28 @@ Use the custom audit role.
 ## Acceptance Checklist
 
 - Custom gap is explicit
+
+## Allowed Tools
+
+- literature.search
+
+## Tool Policy
+
+- maxCalls: 2
+- defaultProviders: crossref, semantic-scholar
+- allowedProviders: crossref, semantic-scholar, pubmed, arxiv
+- maxResultsPerProvider: 10
+- timeoutMs: 12000
+- requireArtifactOutput: true
+- allowRefresh: false
+
+## Input Requirements
+
+- Search topic
+
+## Boundaries
+
+- Do not invent retrieved papers
 `,
 		);
 
@@ -82,6 +104,18 @@ Use the custom audit role.
 			capabilities: ["custom-audit"],
 			expectedOutputs: ["custom audit"],
 			acceptanceChecklist: ["Custom gap is explicit"],
+			allowedTools: ["literature.search"],
+			toolPolicy: {
+				maxCalls: 2,
+				defaultProviders: ["crossref", "semantic-scholar"],
+				allowedProviders: ["crossref", "semantic-scholar", "pubmed", "arxiv"],
+				maxResultsPerProvider: 10,
+				timeoutMs: 12000,
+				requireArtifactOutput: true,
+				allowRefresh: false,
+			},
+			inputRequirements: ["Search topic"],
+			boundaries: ["Do not invent retrieved papers"],
 		});
 	});
 

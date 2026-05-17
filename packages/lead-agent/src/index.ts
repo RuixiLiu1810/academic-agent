@@ -262,6 +262,70 @@ function sectionList(markdown: string, heading: string): string[] {
 		.filter((line) => line.length > 0);
 }
 
+function parseBoolean(value: string): boolean | undefined {
+	const normalized = value.trim().toLowerCase();
+	if (normalized === "true") return true;
+	if (normalized === "false") return false;
+	return undefined;
+}
+
+function parseStringList(value: string): string[] {
+	return value
+		.split(",")
+		.map((part) => part.trim())
+		.filter((part) => part.length > 0);
+}
+
+function sectionKeyValueMap(markdown: string, heading: string): Map<string, string> {
+	const entries = new Map<string, string>();
+	for (const item of sectionList(markdown, heading)) {
+		const separator = item.indexOf(":");
+		if (separator === -1) {
+			continue;
+		}
+		const key = item.slice(0, separator).trim();
+		const value = item.slice(separator + 1).trim();
+		if (key.length > 0 && value.length > 0) {
+			entries.set(key, value);
+		}
+	}
+	return entries;
+}
+
+function parseToolPolicy(markdown: string): WorkerProfile["toolPolicy"] {
+	const values = sectionKeyValueMap(markdown, "Tool Policy");
+	if (values.size === 0) {
+		return undefined;
+	}
+	const policy: NonNullable<WorkerProfile["toolPolicy"]> = {};
+	const numericKeys = ["maxCalls", "maxResultsPerProvider", "timeoutMs"] as const;
+	for (const key of numericKeys) {
+		const value = values.get(key);
+		if (value !== undefined) {
+			const parsed = Number(value);
+			if (Number.isFinite(parsed)) {
+				policy[key] = parsed;
+			}
+		}
+	}
+	for (const key of ["defaultProviders", "allowedProviders"] as const) {
+		const value = values.get(key);
+		if (value !== undefined) {
+			policy[key] = parseStringList(value);
+		}
+	}
+	for (const key of ["requireArtifactOutput", "allowRefresh"] as const) {
+		const value = values.get(key);
+		if (value !== undefined) {
+			const parsed = parseBoolean(value);
+			if (parsed !== undefined) {
+				policy[key] = parsed;
+			}
+		}
+	}
+	return policy;
+}
+
 function titleFromMarkdown(markdown: string, fallback: string): string {
 	const title = /^#\s+(.+?)\s*$/m.exec(markdown)?.[1]?.trim();
 	return title && title.length > 0 ? title : fallback;
@@ -280,6 +344,10 @@ export function parseAcademicProfileMarkdown(id: string, markdown: string): Work
 	const capabilities = sectionList(markdown, "Capabilities");
 	const expectedOutputs = sectionList(markdown, "Output Requirements");
 	const acceptanceChecklist = sectionList(markdown, "Acceptance Checklist");
+	const allowedTools = sectionList(markdown, "Allowed Tools");
+	const toolPolicy = parseToolPolicy(markdown);
+	const inputRequirements = sectionList(markdown, "Input Requirements");
+	const boundaries = sectionList(markdown, "Boundaries");
 	return {
 		id,
 		name: titleFromMarkdown(markdown, fallbackName),
@@ -288,6 +356,10 @@ export function parseAcademicProfileMarkdown(id: string, markdown: string): Work
 		capabilities: capabilities.length > 0 ? capabilities : [id],
 		expectedOutputs: expectedOutputs.length > 0 ? expectedOutputs : undefined,
 		acceptanceChecklist: acceptanceChecklist.length > 0 ? acceptanceChecklist : undefined,
+		allowedTools: allowedTools.length > 0 ? allowedTools : undefined,
+		toolPolicy,
+		inputRequirements: inputRequirements.length > 0 ? inputRequirements : undefined,
+		boundaries: boundaries.length > 0 ? boundaries : undefined,
 	};
 }
 
