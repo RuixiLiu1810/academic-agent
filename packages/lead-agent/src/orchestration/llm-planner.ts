@@ -170,9 +170,6 @@ export function createLlmWorkflowPlanner(config: LlmWorkflowPlannerConfig): Work
 	return {
 		async plan(input: LeadTaskPlanningInput): Promise<WorkflowPlan> {
 			const validationContext: PlannerValidationContext = {
-				taskId: input.taskId,
-				sessionId: input.sessionId,
-				objective: input.objective,
 				profiles: config.profiles,
 				templates: config.templates,
 				inputArtifacts: input.inputArtifacts,

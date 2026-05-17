@@ -67,32 +67,6 @@ export interface WorkerToolPolicy {
 	allowRefresh?: boolean;
 }
 
-export type OutputRequirementKind = "summary" | "structured" | "artifact";
-
-export interface OutputRequirement {
-	id: string;
-	kind: OutputRequirementKind;
-	label: string;
-	required: boolean;
-	/** Dot-path into WorkerResult.structuredOutputs, e.g. "evidenceTable.rows" */
-	structuredPath?: string;
-	/** Artifact kind expected, e.g. "evidence-table" */
-	artifactKind?: string;
-	description?: string;
-}
-
-export interface ArtifactRequirement {
-	kind: string;
-	required: boolean;
-	description?: string;
-}
-
-export interface WorkerOutputCapability {
-	outputRequirementIds: string[];
-	artifactKinds: string[];
-	structuredOutputPaths: string[];
-}
-
 export interface WorkerProfile {
 	id: string;
 	name: string;
@@ -105,7 +79,6 @@ export interface WorkerProfile {
 	toolPolicy?: WorkerToolPolicy;
 	inputRequirements?: string[];
 	boundaries?: string[];
-	outputCapabilities?: WorkerOutputCapability;
 }
 
 export interface WorkerRequest {
@@ -115,10 +88,7 @@ export interface WorkerRequest {
 	constraints: string[];
 	inputArtifacts: ArtifactRef[];
 	expectedOutputs: string[];
-	expectedArtifactKinds?: string[];
 	acceptanceCriteria: string[];
-	outputRequirements?: OutputRequirement[];
-	artifactRequirements?: ArtifactRequirement[];
 	executionBudget?: WorkerBudget;
 	retryPolicy?: WorkerRetryPolicy;
 	profile?: WorkerProfile;
@@ -362,10 +332,7 @@ export const WorkerRequestSchema: JsonObject = {
 		constraints: stringArraySchema,
 		inputArtifacts: { type: "array", items: ArtifactRefSchema },
 		expectedOutputs: stringArraySchema,
-		expectedArtifactKinds: stringArraySchema,
 		acceptanceCriteria: stringArraySchema,
-		outputRequirements: jsonObjectSchema,
-		artifactRequirements: jsonObjectSchema,
 		executionBudget: jsonObjectSchema,
 		retryPolicy: jsonObjectSchema,
 		profile: WorkerProfileSchema,
@@ -694,7 +661,6 @@ export function isWorkerRequest(value: unknown): value is WorkerRequest {
 		isStringArray(value.constraints) &&
 		isArtifactRefArray(value.inputArtifacts) &&
 		isStringArray(value.expectedOutputs) &&
-		(value.expectedArtifactKinds === undefined || isStringArray(value.expectedArtifactKinds)) &&
 		isStringArray(value.acceptanceCriteria) &&
 		(value.executionBudget === undefined || isWorkerBudget(value.executionBudget)) &&
 		(value.retryPolicy === undefined || isWorkerRetryPolicy(value.retryPolicy)) &&
