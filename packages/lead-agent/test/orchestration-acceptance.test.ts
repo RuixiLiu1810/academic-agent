@@ -61,6 +61,26 @@ describe("lead acceptance", () => {
 		expect(report.accepted).toBe(true);
 	});
 
+	it("accepts literature search artifact briefs as search deliverables", () => {
+		const report = createLeadAcceptanceReport(
+			request(["search strategy", "bibliography candidates", "retrieval gaps"]),
+			result({
+				artifactBriefs: [
+					{
+						artifactId: "search-artifact-1",
+						kind: "literature-search-results",
+						title: "NIR search strategy",
+						brief: "Search strategy, bibliography candidates, and retrieval gaps for NIR.",
+						keyFindings: ["bibliography candidates"],
+						limitations: ["retrieval gaps"],
+					},
+				],
+			}),
+		);
+
+		expect(report.accepted).toBe(true);
+	});
+
 	it("still rejects genuinely missing expected outputs", () => {
 		const report = createLeadAcceptanceReport(
 			request(["citation audit"]),

@@ -251,12 +251,18 @@ export function buildCodingWorkerPrompt(request: WorkerRequest, promptPrefix?: s
 	sections.push(`Return a concise human-readable answer, then include this machine-readable block.
 Use exact expected output labels as structuredOutputs keys when possible, preserving spelling such as "evidence-table".
 For durable deliverables, include producedArtifacts with matching kind values and artifactBriefs that summarize each artifact.
+For literature-searcher tasks, use retrievalMode="offline-structured" and providerAvailable=false unless a real search provider was explicitly supplied.
+Do not present offline candidates as verified database retrieval results.
 
 WORKER_RESULT_JSON:
 {
   "summary": "Concise result summary",
   "structuredOutputs": {
-    "expected-output-label": {}
+    "expected-output-label": {},
+    "retrieval": {
+      "retrievalMode": "offline-structured",
+      "providerAvailable": false
+    }
   },
   "producedArtifacts": [
     {

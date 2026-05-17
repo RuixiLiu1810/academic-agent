@@ -105,6 +105,29 @@ WORKER_RESULT_JSON:
 		expect(prompt).toContain("WORKER_RESULT_JSON");
 	});
 
+	it("includes offline retrieval semantics in the literature searcher prompt", () => {
+		const literaturePrompt = buildCodingWorkerPrompt({
+			taskId: "task-literature",
+			workerType: "literature-searcher",
+			objective: "Find literature about NIR.",
+			constraints: [],
+			inputArtifacts: [],
+			expectedOutputs: ["search strategy", "bibliography candidates", "retrieval gaps"],
+			acceptanceCriteria: ["Candidate bibliography is separated from verified evidence"],
+			profile: {
+				id: "literature-searcher",
+				name: "Literature Searcher",
+				rolePrompt: "Act as an academic literature search planner.",
+				capabilities: ["literature-search"],
+			},
+		});
+
+		expect(literaturePrompt).toContain("retrievalMode");
+		expect(literaturePrompt).toContain("offline-structured");
+		expect(literaturePrompt).toContain("providerAvailable");
+		expect(literaturePrompt).toContain("Do not present offline candidates as verified database retrieval results");
+	});
+
 	it("exposes the worker adapter through the worker entrypoint", () => {
 		expect(runCodingWorkerFromSubpath).toBe(runCodingWorker);
 	});
