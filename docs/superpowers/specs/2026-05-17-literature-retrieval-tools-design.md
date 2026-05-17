@@ -31,9 +31,31 @@ The repo already has the foundation for this feature:
 The missing piece is a tool-aware profile worker path in `lead-agent`: a worker profile
 should define not only role text, but also tools, tool policy, and boundaries.
 
+## Existing Tool Call Foundation
+
+This feature must reuse the repo's existing tool call stack. It must not introduce a
+parallel "retrieval invocation" protocol.
+
+Current layers:
+
+- `packages/ai`: exposes model-facing `tools` and receives assistant `toolCall` blocks.
+- `packages/agent`: owns the agent loop that validates tool call arguments, executes
+  tools sequentially or in parallel, emits `tool_execution_*` events, and appends
+  `toolResult` messages.
+- `packages/agent-host`: owns host-level tool registration through `ToolDefinition`,
+  `customTools`, `tools`, `allowedToolNames`, and `noTools`.
+- `packages/lead-agent`: already uses model tool calls for `submit_workflow_plan` in the
+  LLM planner, but it does not yet run academic profile workers with profile-scoped tools.
+
+Therefore the retrieval work should add **profile-aware tool injection** in `lead-agent`,
+not a new tool runtime. `literature.search` should be a normal `agent-host`
+`ToolDefinition` passed into an `agent-host` session as a custom tool.
+
 ## Goals
 
 - Let `literature-searcher` call a controlled `literature.search` tool.
+- Reuse existing `packages/ai` -> `packages/agent` -> `packages/agent-host` tool call
+  execution.
 - Support Crossref, Semantic Scholar, PubMed, and arXiv in one development cycle.
 - Persist full normalized search results as artifacts under the current session task
   folder.
@@ -49,6 +71,8 @@ should define not only role text, but also tools, tool policy, and boundaries.
 
 - Do not make `coding-agent` the literature retrieval host.
 - Do not let workers freely access arbitrary network APIs.
+- Do not create a second tool execution loop or ask workers to simulate tool calls through
+  JSON text.
 - Do not implement Google Scholar, Web of Science, Scopus, CNKI, Zotero, PDF download, or
   full-text extraction in this cycle.
 - Do not claim that search results are exhaustive or systematic-review-grade unless the
@@ -76,6 +100,17 @@ allowed by the selected profile.
 This keeps the worker interface honest: the profile defines what the worker can do, while
 the host still enforces what actually runs.
 
+Implementation rule:
+
+- `literature.search` is implemented as an `agent-host` `ToolDefinition`.
+- `lead-agent` builds the available academic tool registry.
+- The profile runner creates an `agent-host` session with `customTools` set to the
+  selected tool definitions and `tools`/`allowedToolNames` set from the profile.
+- The existing `agent` loop executes the LLM-emitted tool calls and returns normal
+  `toolResult` messages.
+- The profile runner converts the final assistant response plus tool-result artifacts into
+  a `WorkerResult`.
+
 ## Worker Profile Contract
 
 Extend `WorkerProfile` in `agent-contracts` with optional fields:
@@ -88,6 +123,7 @@ export interface WorkerToolPolicy {
 	maxResultsPerProvider?: number;
 	timeoutMs?: number;
 	requireArtifactOutput?: boolean;
+	allowRefresh?: boolean;
 }
 
 export interface WorkerProfile {
@@ -125,6 +161,10 @@ Its boundaries should say:
 - do not request `evidence-table` unless a downstream synthesis step is planned
 
 ## Retrieval Tool
+
+`literature.search` is a model-callable `ToolDefinition`, not an internal helper invoked
+directly by the lead planner. The model inside the `literature-searcher` worker decides
+when to call it, within the profile's tool policy.
 
 ### Tool Name
 
@@ -166,6 +206,53 @@ export interface LiteratureSearchToolOutput {
 The tool output must be context-small. It should include only a short preview, warnings,
 and artifact refs. Complete normalized results must live in artifacts.
 
+### ToolDefinition Requirements
+
+The tool definition should include:
+
+- `name: "literature.search"`
+- concise `description` that tells the model it performs provider-backed metadata search
+- TypeBox `parameters` schema for the input shape
+- `executionMode: "sequential"` to simplify rate limiting and artifact writes
+- `promptSnippet` so the active tool appears clearly in the worker system prompt
+- `promptGuidelines` requiring provider provenance, artifact refs, and no fabricated
+  citations
+- `execute()` implementation that calls the provider registry, writes artifacts, and
+  returns compact `AgentToolResult` content plus structured details
+
+The structured `details` should contain the machine-readable
+`LiteratureSearchToolOutput`. The textual `content` should be a short human-readable
+summary suitable for logs and TUI display.
+
+## Execution Semantics
+
+Tool execution and worker result construction need deterministic precedence rules.
+
+### Tool Result to WorkerResult Mapping
+
+`literature.search` writes artifacts and returns `LiteratureSearchToolOutput` in
+`AgentToolResult.details`. The profile worker runner must collect successful
+`literature.search` tool results from the session transcript and map them into the
+returned `WorkerResult`:
+
+- `artifactRefs` from tool details become `WorkerResult.producedArtifacts`.
+- compact provider summaries and top candidate previews become `WorkerResult.artifactBriefs`.
+- provider warnings become `WorkerResult.warnings`.
+- no-result or all-provider-failed cases become `WorkerResult.openQuestions` when the
+  issue is recoverable by narrowing scope or changing providers.
+- the final assistant text becomes `WorkerResult.summary`, but it must not override
+  provider provenance, artifact refs, or failure state from the tool result.
+
+If the final assistant response conflicts with the tool result, the tool result wins for
+artifact refs, provider coverage, candidate counts, and failure state. The assistant may
+explain limitations, but it cannot invent retrieved papers or remove provider warnings.
+
+### Tool Call Count and Trace
+
+The runner should preserve all literature tool calls in the session transcript and include
+the retrieval run IDs in `ExecutionTrace`. This gives the lead agent enough information to
+explain why a result was accepted or rejected without loading full artifacts into context.
+
 ## Normalized Candidate
 
 All provider results normalize to one internal shape:
@@ -195,6 +282,54 @@ export interface LiteratureCandidate {
 
 Provider raw responses may be stored in artifact content or metadata for debugging, but
 worker prompts and lead-agent synthesis should consume normalized candidates and briefs.
+
+## Deduplication and Ranking
+
+Multiple providers will often return the same paper. The retrieval core should merge
+duplicates before writing the normalized `literature-search-results` artifact.
+
+### Deduplication
+
+Use deterministic keys in this order:
+
+1. DOI, normalized to lowercase and stripped of URL prefixes.
+2. PMID for PubMed records.
+3. arXiv ID for arXiv records.
+4. Semantic Scholar paper ID.
+5. normalized title plus publication year as a fallback.
+
+When records merge, preserve provider provenance as an array rather than discarding source
+information:
+
+```ts
+export interface LiteratureProviderProvenance {
+	provider: LiteratureProviderId;
+	providerRecordId: string;
+	sourceQuery: string;
+	rawScore?: number;
+	retrievedAt: string;
+}
+```
+
+The merged candidate should retain the richest metadata available, preferring DOI/PMID
+identifiers, abstracts, canonical URLs, and venue details when present.
+
+### Ranking
+
+First-cycle ranking should be simple and explainable. It is retrieval ranking, not evidence
+quality ranking.
+
+Suggested ranking inputs:
+
+- exact or near-exact query/title match
+- publication year recency when the user asks for recent work
+- number of providers returning the same candidate
+- citation count when a provider supplies it
+- domain fit, such as PubMed for biomedical tasks or arXiv for technical preprints
+- availability of DOI, PMID, arXiv ID, abstract, and URL
+
+The artifact should record enough ranking notes to explain why top candidates were
+previewed, but the lead agent should not present this as a methodological quality score.
 
 ## Provider Layer
 
@@ -326,6 +461,66 @@ Default provider set:
 Default `maxResultsPerProvider` should be small, for example 10, so the first tool call is
 useful without flooding artifacts or context.
 
+## Policy Enforcement and Security
+
+Profile tool policy must be enforced in code, not only described in prompts.
+
+### Enforced Tool Policy
+
+The profile runner and `literature.search` tool should enforce:
+
+- `allowedTools`: unknown or disallowed tools fail before session execution.
+- `maxCalls`: tool calls beyond the profile limit are blocked or rejected.
+- `allowedProviders`: provider IDs outside the profile policy are rejected.
+- `defaultProviders`: used when the tool input omits providers.
+- `maxResultsPerProvider`: clamps tool input and provider request limits.
+- `timeoutMs`: applies per provider request and to the full retrieval run where practical.
+- `requireArtifactOutput`: accepted retrieval requires at least one artifact ref.
+- `allowRefresh`: controls whether a worker may bypass session cache.
+
+The model can choose when to call an allowed tool, but it cannot expand its permissions by
+writing different arguments.
+
+### Credentials and Privacy
+
+Artifacts may include the user query, provider IDs, normalized records, provider warnings,
+and sanitized raw provider payloads. They must not include:
+
+- API keys
+- authorization headers
+- raw request headers
+- full auth configuration
+
+If raw provider responses are stored for diagnostics, sanitize request/response metadata
+before persistence. Search queries are written to artifacts as part of reproducibility; the
+lead-agent should treat them as user-provided research data, not secret credentials.
+
+## Cache and Refresh Semantics
+
+Search cache should be session-scoped in this cycle. The durable source of truth remains
+the session artifact folder, not a global retrieval database.
+
+Cache key:
+
+```text
+provider + normalized query + filters + maxResultsPerProvider
+```
+
+Default behavior:
+
+- reuse an existing matching retrieval artifact inside the same session when available
+- create a new retrieval run when query, filters, provider set, or max result settings
+  differ
+- write cache metadata into the artifact manifest
+
+Future or optional input:
+
+```ts
+refresh?: boolean;
+```
+
+`refresh: true` should bypass session cache only when the profile policy allows refresh.
+
 ## Artifact Semantics
 
 The tool should write at least one artifact per retrieval run:
@@ -365,20 +560,41 @@ selected artifact content only when necessary.
 
 ### Profile Worker Runner
 
-Add a `lead-agent` runner that executes academic profile workers through `agent-host`
-custom tools:
+Add a `lead-agent` runner that executes academic profile workers through the existing
+`agent-host` custom tool path:
 
 ```text
 planner decision
 -> workflow step profile id
 -> profile-worker-runner
--> create agent-host session with profile role prompt and allowed tools
--> literature.search tool writes artifacts
--> worker returns WorkerResult with artifact refs and artifact briefs
+-> create agent-host session with profile role prompt
+-> pass literature.search in customTools
+-> set allowed/active tools from profile.allowedTools
+-> agent loop executes model-emitted literature.search toolCall
+-> literature.search writes artifacts and returns toolResult
+-> worker final response is converted to WorkerResult with artifact refs and artifact briefs
 ```
 
 This runner is for academic/tool-aware workers. `coding-agent` remains available for
 coding-specific worker requests, but literature retrieval should not route through it.
+
+The runner must not bypass tool calls by invoking providers before the worker runs. The
+worker should see the tool in its available tool set and make an explicit tool call, so the
+session transcript preserves the decision, arguments, result, and trace.
+
+### Tool Registry Boundary
+
+`lead-agent` should own an academic tool registry:
+
+```text
+academic tool registry
+-> literature.search ToolDefinition
+-> future academic tools such as citation.format or evidence.extract
+```
+
+The registry resolves profile `allowedTools` to concrete `ToolDefinition`s. Unknown tool
+names should fail validation before execution. A profile with no allowed tools should run
+with `noTools: "all"`.
 
 ### Planner Behavior
 
@@ -413,6 +629,28 @@ The final user answer should distinguish:
 - unavailable providers
 - gaps that need manual/database-specific follow-up
 
+## Systematic Review Boundary
+
+The retrieval tool can support preliminary literature discovery, but the first cycle does
+not claim PRISMA-grade systematic review coverage.
+
+When the user requests a systematic review, scoping review, meta-analysis, or exhaustive
+search, `lead-agent` should treat the retrieval result as preliminary unless all required
+protocol elements are present:
+
+- database list
+- search strings
+- date range
+- inclusion and exclusion criteria
+- population/intervention/comparator/outcome or domain-specific equivalent when relevant
+- deduplication rules
+- screening process
+- reproducible search log
+
+`literature-searcher` may produce a search log artifact and identify missing protocol
+elements, but it should not state that a systematic search is complete unless the workflow
+explicitly implements those requirements.
+
 ## Development Cycle Phases
 
 ### Phase 1: Profile and Tool Contract
@@ -421,16 +659,18 @@ The final user answer should distinguish:
 - Update profile Markdown parsing.
 - Update `literature-searcher.md` with `allowedTools`, `toolPolicy`, and boundaries.
 - Add `literature.search` TypeScript input/output types.
+- Document that profile tools map to existing `agent-host` `ToolDefinition`s.
 
 Commit boundary: contract compiles and profile parser tests pass.
 
 ### Phase 2: Retrieval Core
 
 - Add normalized candidate types.
+- Add deterministic deduplication and simple ranking.
 - Add provider registry.
 - Add fake provider for tests.
 - Add artifact writer for `literature-search-results`.
-- Add `literature.search` tool implementation against fake providers.
+- Add `literature.search` `ToolDefinition` implementation against fake providers.
 
 Commit boundary: tool unit tests pass with fake provider and artifact refs.
 
@@ -455,6 +695,9 @@ Commit boundary: PubMed and arXiv provider tests pass without real network.
 
 - Add profile-worker-runner for tool-aware academic profiles.
 - Route `literature-searcher` through the profile worker runner.
+- Inject `literature.search` through `customTools` and profile `allowedTools`.
+- Map `literature.search` tool results into `WorkerResult.producedArtifacts`,
+  `artifactBriefs`, `warnings`, and `ExecutionTrace`.
 - Carry literature artifact refs to downstream `researcher`.
 - Update acceptance so provider-backed search requires artifact refs and provenance.
 
@@ -465,6 +708,8 @@ Commit boundary: lead-agent workflow tests pass.
 - Keep default smoke deterministic with fake provider fixtures.
 - Add optional live smoke behind explicit environment opt-in.
 - Extend academic smoke to verify provider provenance and artifact manifest content.
+- Treat live smoke as diagnostic. Network, provider, or rate-limit failures should not fail
+  the normal deterministic gate unless mocked provider tests also fail.
 
 Commit boundary: focused tests, `npm run check`, and deterministic smoke pass.
 
@@ -477,8 +722,14 @@ Add tests at the narrowest package level:
   `Boundaries`.
 - `lead-agent` literature providers: mocked Crossref, Semantic Scholar, PubMed, arXiv
   responses.
-- `lead-agent` tool tests: fake provider writes `literature-search-results` and returns
-  compact previews.
+- `lead-agent` tool tests: `literature.search` as a `ToolDefinition` validates params,
+  runs fake providers, writes `literature-search-results`, and returns compact previews.
+- `lead-agent` retrieval core tests: deduplicates DOI/PMID/arXiv/title-year duplicates and
+  ranks merged candidates deterministically.
+- `lead-agent` profile runner tests: allowed tools are injected through `customTools`, and
+  disallowed profile tools are rejected before execution.
+- `lead-agent` policy tests: clamps provider/result limits, blocks disallowed providers,
+  and keeps credentials out of artifacts.
 - `lead-agent` workflow tests: search task routes to `literature-searcher`; synthesis task
   routes to `literature-searcher -> researcher`.
 - Academic smoke: deterministic fixture mode by default; optional live mode only when
