@@ -8,11 +8,17 @@ describe("academic workflow smoke suite", () => {
 	it("defines realistic academic smoke cases", () => {
 		expect(DEFAULT_ACADEMIC_SMOKE_CASES.map((testCase) => testCase.id)).toEqual([
 			"direct-writing",
+			"literature-search",
 			"citation-check",
 			"method-audit",
 			"review-memo",
 			"mini-paperorchestra-inputs",
 		]);
+		expect(DEFAULT_ACADEMIC_SMOKE_CASES.find((testCase) => testCase.id === "literature-search")).toMatchObject({
+			expectedProfileId: "literature-searcher",
+			expectedOutputs: ["search strategy", "bibliography candidates", "retrieval gaps"],
+			artifactKinds: ["literature-search-results"],
+		});
 		expect(DEFAULT_ACADEMIC_SMOKE_CASES.find((testCase) => testCase.id === "citation-check")).toMatchObject({
 			expectedProfileId: "citation-checker",
 			expectedOutputs: ["citation audit"],
@@ -33,15 +39,17 @@ describe("academic workflow smoke suite", () => {
 		const result = await runAcademicSmokeSuite();
 
 		expect(result.passed).toBe(true);
-		expect(result.results).toHaveLength(5);
+		expect(result.results).toHaveLength(6);
 		expect(result.results.map((caseResult) => [caseResult.caseId, caseResult.result.decision.mode])).toEqual([
 			["direct-writing", "direct"],
+			["literature-search", "worker"],
 			["citation-check", "worker"],
 			["method-audit", "worker"],
 			["review-memo", "worker"],
 			["mini-paperorchestra-inputs", "worker"],
 		]);
 		expect(result.artifactRefs.map((artifact) => artifact.kind)).toEqual([
+			"literature-search-results",
 			"claim-audit",
 			"revision-plan",
 			"review-comment-map",
@@ -70,7 +78,7 @@ describe("academic workflow smoke suite", () => {
 
 			expect(result.passed).toBe(true);
 			expect(result.manifestPath).toBe(join(tempDir, "artifacts.json"));
-			expect(result.artifactRefs).toHaveLength(5);
+			expect(result.artifactRefs).toHaveLength(6);
 		} finally {
 			rmSync(tempDir, { recursive: true, force: true });
 		}

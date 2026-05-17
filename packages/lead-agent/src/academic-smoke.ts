@@ -52,6 +52,16 @@ export const DEFAULT_ACADEMIC_SMOKE_CASES: AcademicSmokeCase[] = [
 		expectedOutputs: [],
 	},
 	{
+		id: "literature-search",
+		objective:
+			"Find literature about NIR and return a structured literature search plan with candidate bibliography hints.",
+		fixtureFiles: ["nir_literature_prompt.md"],
+		expectedProfileId: "literature-searcher",
+		expectedStepProfileIds: ["literature-searcher"],
+		expectedOutputs: ["search strategy", "bibliography candidates", "retrieval gaps"],
+		artifactKinds: [ACADEMIC_ARTIFACT_KINDS.literatureSearchResults],
+	},
+	{
 		id: "citation-check",
 		objective: "Review the manuscript evidence notes and identify citation gaps.",
 		fixtureFiles: ["manuscript_excerpt.md", "evidence_notes.md"],
@@ -108,17 +118,19 @@ function deterministicWorkerRunner(store: ArtifactStore): LeadAgentWorkerRunner 
 	return async (request: WorkerRequest): Promise<WorkerResult> => {
 		const artifact = createAcademicArtifact(store, {
 			kind:
-				request.workerType === "citation-checker"
-					? ACADEMIC_ARTIFACT_KINDS.claimAudit
-					: request.workerType === "method-auditor"
-						? ACADEMIC_ARTIFACT_KINDS.revisionPlan
-						: request.workerType === "reviewer"
-							? ACADEMIC_ARTIFACT_KINDS.reviewCommentMap
-							: request.workerType === "reviser"
-								? ACADEMIC_ARTIFACT_KINDS.revisionPlan
-								: request.workerType === "writer"
-									? ACADEMIC_ARTIFACT_KINDS.outline
-									: ACADEMIC_ARTIFACT_KINDS.evidenceTable,
+				request.workerType === "literature-searcher"
+					? ACADEMIC_ARTIFACT_KINDS.literatureSearchResults
+					: request.workerType === "citation-checker"
+						? ACADEMIC_ARTIFACT_KINDS.claimAudit
+						: request.workerType === "method-auditor"
+							? ACADEMIC_ARTIFACT_KINDS.revisionPlan
+							: request.workerType === "reviewer"
+								? ACADEMIC_ARTIFACT_KINDS.reviewCommentMap
+								: request.workerType === "reviser"
+									? ACADEMIC_ARTIFACT_KINDS.revisionPlan
+									: request.workerType === "writer"
+										? ACADEMIC_ARTIFACT_KINDS.outline
+										: ACADEMIC_ARTIFACT_KINDS.evidenceTable,
 			title: `${request.workerType} smoke artifact`,
 			content: `${request.workerType}: ${request.expectedOutputs.join(", ")}`,
 			metadata: {
@@ -163,6 +175,29 @@ function deterministicWorkerRunner(store: ArtifactStore): LeadAgentWorkerRunner 
 function createAcademicSmokePlanner(): WorkflowPlanner {
 	return {
 		async plan(input) {
+			if (input.taskId === "literature-search") {
+				return {
+					taskId: input.taskId,
+					sessionId: input.sessionId,
+					objective: input.objective,
+					rationale: "The smoke case asks for literature discovery before evidence synthesis.",
+					userVisibleSummary: "I will run a literature searcher pass and return accepted search outputs.",
+					mode: "workflow",
+					steps: [
+						{
+							id: "literature-search",
+							order: 1,
+							profileId: "literature-searcher",
+							objective: `User objective: ${input.objective}\n\nStep objective: Build an offline structured search strategy and candidate bibliography hints.`,
+							inputArtifactRefs: input.inputArtifacts,
+							expectedArtifactKinds: [ACADEMIC_ARTIFACT_KINDS.literatureSearchResults],
+							expectedOutputs: ["search strategy", "bibliography candidates", "retrieval gaps"],
+							acceptanceCriteria: ["Candidate bibliography is separated from verified evidence"],
+						},
+					],
+					stopConditions: ["Literature search plan accepted"],
+				};
+			}
 			if (input.taskId !== "mini-paperorchestra-inputs") {
 				return {
 					taskId: input.taskId,
