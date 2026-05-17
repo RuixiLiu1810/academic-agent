@@ -23,6 +23,17 @@ export function validateWorkflowPlan(plan: unknown, context: PlannerValidationCo
 		errors.push("Plan stopConditions must be an array of strings");
 	}
 
+	// Validate that plan-level identifiers match the input context
+	if (typeof p.taskId === "string" && p.taskId !== context.taskId) {
+		errors.push(`Plan taskId "${p.taskId}" must match input taskId "${context.taskId}"`);
+	}
+	if (typeof p.sessionId === "string" && p.sessionId !== context.sessionId) {
+		errors.push(`Plan sessionId "${p.sessionId}" must match input sessionId "${context.sessionId}"`);
+	}
+	if (typeof p.objective === "string" && p.objective.trim() !== context.objective.trim()) {
+		errors.push("Plan objective must be a verbatim copy of the input objective");
+	}
+
 	const profileIds = new Set(context.profiles.map((profile) => profile.id));
 	const inputArtifactIds = new Set(context.inputArtifacts.map((a) => a.id));
 	const stepIds = new Set<string>();
@@ -75,6 +86,12 @@ export function validateWorkflowPlan(plan: unknown, context: PlannerValidationCo
 			if (stepObjMatch && stepObjMatch[1]!.trim().length === 0) {
 				errors.push(`Step ${stepId}: "Step objective:" section is empty or truncated`);
 			}
+			// Verify the "User objective:" section is a verbatim copy of the input objective
+			const userObjMatch = s.objective.match(/User objective:\s*([\s\S]*?)(?=\n\nStep objective:|$)/);
+			const extractedUserObjective = userObjMatch?.[1]?.trim();
+			if (extractedUserObjective !== undefined && extractedUserObjective !== context.objective.trim()) {
+				errors.push(`Step ${stepId}: "User objective:" section must be a verbatim copy of the input objective`);
+			}
 		}
 
 		if (!Array.isArray(s.inputArtifactRefs)) {
@@ -109,6 +126,19 @@ export function validateWorkflowPlan(plan: unknown, context: PlannerValidationCo
 		}
 	}
 
+	// Check step order continuity: must be 1..N with no gaps or duplicates
+	const collectedOrders = (p.steps as unknown[])
+		.map((s) => (typeof s === "object" && s !== null ? (s as Record<string, unknown>).order : undefined))
+		.filter((o): o is number => typeof o === "number");
+	const uniqueOrders = new Set(collectedOrders);
+	if (uniqueOrders.size !== collectedOrders.length) {
+		errors.push("Duplicate step orders detected");
+	}
+	const sortedOrders = [...collectedOrders].sort((a, b) => a - b);
+	if (sortedOrders.some((o, i) => o !== i + 1)) {
+		errors.push("Step orders must be continuous starting from 1 (e.g. 1, 2, 3, ...)");
+	}
+
 	return errors;
 }
 
@@ -127,6 +157,9 @@ export function createFauxWorkflowPlanner(factory: (input: LeadTaskPlanningInput
 		async plan(input) {
 			const plan = factory(input);
 			assertValidWorkflowPlan(plan, {
+				taskId: input.taskId,
+				sessionId: input.sessionId,
+				objective: input.objective,
 				profiles: input.profiles,
 				templates: [],
 				inputArtifacts: input.inputArtifacts,

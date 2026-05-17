@@ -35,6 +35,9 @@ export interface WorkflowTemplate {
 }
 
 export interface PlannerValidationContext {
+	taskId: string;
+	sessionId: string;
+	objective: string;
 	profiles: readonly WorkerProfile[];
 	templates: WorkflowTemplate[];
 	inputArtifacts: ArtifactRef[];

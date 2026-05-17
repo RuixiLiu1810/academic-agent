@@ -6,6 +6,9 @@ import { WORKFLOW_TEMPLATES } from "../src/orchestration/templates.js";
 
 function ctx(overrides: Partial<Parameters<typeof validateWorkflowPlan>[1]> = {}) {
 	return {
+		taskId: "task-1",
+		sessionId: "session-1",
+		objective: "Write a review.",
 		profiles: DEFAULT_ACADEMIC_PROFILES,
 		templates: WORKFLOW_TEMPLATES,
 		inputArtifacts: [],
@@ -16,7 +19,7 @@ function ctx(overrides: Partial<Parameters<typeof validateWorkflowPlan>[1]> = {}
 const validDirectPlan: WorkflowPlan = {
 	taskId: "task-1",
 	sessionId: "session-1",
-	objective: "Write concise text.",
+	objective: "Write a review.",
 	rationale: "Small writing task.",
 	userVisibleSummary: "I will handle this directly.",
 	mode: "direct",
@@ -39,6 +42,8 @@ describe("validateWorkflowPlan", () => {
 	it("defines the full template inventory", () => {
 		expect(WORKFLOW_TEMPLATES.map((t) => t.id)).toEqual([
 			"direct-writing",
+			"literature-search",
+			"literature-to-evidence",
 			"citation-audit",
 			"method-audit",
 			"review-memo",

@@ -1,4 +1,5 @@
 import type {
+	AcceptanceIssue,
 	AcceptanceReport,
 	ArtifactBrief,
 	ArtifactRef,
@@ -90,6 +91,7 @@ function workerRequestForStep(
 		constraints,
 		inputArtifacts,
 		expectedOutputs: step.expectedOutputs,
+		expectedArtifactKinds: step.expectedArtifactKinds.length > 0 ? step.expectedArtifactKinds : undefined,
 		acceptanceCriteria: step.acceptanceCriteria,
 		executionBudget: step.budget,
 		profile,
@@ -183,9 +185,24 @@ export async function executeWorkflowPlan(options: ExecuteWorkflowPlanOptions): 
 		let workerResult: WorkerResult;
 		let acceptanceReport: AcceptanceReport;
 		let attempt = 0;
+		let previousAcceptanceIssues: AcceptanceIssue[] = [];
 		const maxAttempts = maxAttemptsForRequest(workerRequest);
 		while (true) {
 			attempt += 1;
+			const requestForAttempt: WorkerRequest =
+				previousAcceptanceIssues.length > 0
+					? {
+							...workerRequest,
+							metadata: {
+								...(workerRequest.metadata ?? {}),
+								previousAcceptanceIssues: previousAcceptanceIssues.map((issue) => ({
+									code: issue.code,
+									message: issue.message,
+									severity: issue.severity,
+								})),
+							},
+						}
+					: workerRequest;
 			options.onEvent?.({
 				type: "workflow_step_start",
 				taskId: plan.taskId,
@@ -197,7 +214,7 @@ export async function executeWorkflowPlan(options: ExecuteWorkflowPlanOptions): 
 				message: `Step ${step.order}/${orderedSteps.length}: ${step.profileId}`,
 			});
 			try {
-				workerResult = await workerRunner(workerRequest);
+				workerResult = await workerRunner(requestForAttempt);
 			} catch (error) {
 				workerResult = createFailedWorkerResult(workerRequest.taskId, plan.sessionId, error);
 			}
@@ -206,6 +223,7 @@ export async function executeWorkflowPlan(options: ExecuteWorkflowPlanOptions): 
 			if (acceptanceReport.accepted || hasBlockingOpenQuestion(workerResult) || attempt >= maxAttempts) {
 				break;
 			}
+			previousAcceptanceIssues = acceptanceReport.issues.filter((issue) => issue.severity === "error");
 			workspace.appendWorkflowLog({
 				type: "workflow_step_retry",
 				taskId: plan.taskId,

@@ -97,6 +97,15 @@ export function createProfileWorkerRunner(options: CreateProfileWorkerRunnerOpti
 		if (validationError) {
 			return failedResult(request, validationError);
 		}
+		// Determine whether this worker type requires a produced artifact to be considered
+		// successful. Literature-searcher explicitly requires one via toolPolicy; all other
+		// profiles only require a non-empty text summary.
+		const requireArtifact =
+			request.profile?.toolPolicy?.requireArtifactOutput === true ||
+			(request.profile?.toolPolicy?.requireArtifactOutput === undefined &&
+				(request.profile?.allowedTools?.includes("literature.search") ?? false) &&
+				// Check expectedArtifactKinds: if step expects a literature-search-results artifact, require it
+				(request.expectedArtifactKinds?.some((k) => k === "literature-search-results") ?? false));
 		const allowedTools = request.profile?.allowedTools ?? [];
 		const { session } = await createAgentHostSession({
 			cwd: options.cwd,
@@ -111,10 +120,12 @@ export function createProfileWorkerRunner(options: CreateProfileWorkerRunnerOpti
 		const toolOutputs = extractLiteratureSearchToolOutputs(session.messages);
 		const producedArtifacts = toolOutputs.flatMap((output) => output.artifactRefs);
 		const warnings = toolOutputs.flatMap((output) => output.warnings);
+		const summaryText = latestAssistantText(session.messages) ?? "Profile worker completed.";
+		const artifactSuccess = !requireArtifact || producedArtifacts.length > 0;
 		return {
 			taskId: request.taskId,
-			status: producedArtifacts.length > 0 ? "success" : "failed",
-			summary: latestAssistantText(session.messages) ?? "Profile worker completed.",
+			status: artifactSuccess ? "success" : "failed",
+			summary: summaryText,
 			structuredOutputs: {
 				literatureSearchRuns: toolOutputs.map((output) => output.retrievalRunId),
 			},
@@ -130,11 +141,18 @@ export function createProfileWorkerRunner(options: CreateProfileWorkerRunnerOpti
 				})),
 			),
 			warnings,
-			openQuestions:
-				producedArtifacts.length > 0 ? [] : [{ question: "No literature search artifact was produced." }],
+			openQuestions: artifactSuccess
+				? []
+				: [
+						{
+							question:
+								"No literature search artifact was produced. Try running literature.search with more specific query terms.",
+						},
+					],
 			executionTrace: createExecutionTrace(`profile-worker-${request.taskId}`),
-			failureReason:
-				producedArtifacts.length > 0 ? undefined : "Profile worker did not produce a literature artifact.",
+			failureReason: artifactSuccess
+				? undefined
+				: "Profile worker did not produce a required literature-search-results artifact.",
 		};
 	};
 }
