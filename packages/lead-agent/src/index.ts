@@ -362,7 +362,10 @@ function chooseWorkerProfile(
 	if (includesAny(objective, ["review", "审稿", "退修", "comment", "意见", "核查"])) {
 		return profiles.find((profile) => profile.id === "reviewer");
 	}
-	if (includesAny(objective, ["literature", "evidence", "research", "文献", "证据", "检索"])) {
+	if (includesAny(objective, ["literature", "文献", "检索", "search papers", "find papers", "寻找"])) {
+		return profiles.find((profile) => profile.id === "literature-searcher");
+	}
+	if (includesAny(objective, ["evidence", "research", "证据"])) {
 		return profiles.find((profile) => profile.id === "researcher");
 	}
 	for (const profile of profiles) {

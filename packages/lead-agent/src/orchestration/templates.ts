@@ -15,6 +15,47 @@ export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
 		steps: [],
 	},
 	{
+		id: "literature-search",
+		title: "Literature Search",
+		description: "Plan and triage literature discovery before source-backed evidence synthesis.",
+		steps: [
+			{
+				id: "literature-search",
+				profileId: "literature-searcher",
+				objective:
+					"Build an offline structured search strategy, query plan, candidate bibliography hints, and retrieval gaps.",
+				expectedArtifactKinds: ["literature-search-results"],
+				expectedOutputs: ["search strategy", "query plan", "bibliography candidates", "retrieval gaps"],
+				acceptanceCriteria: ["Candidate bibliography is separated from verified evidence"],
+			},
+		],
+	},
+	{
+		id: "literature-to-evidence",
+		title: "Literature To Evidence",
+		description: "Search first, then synthesize accepted search outputs into evidence notes.",
+		steps: [
+			{
+				id: "literature-search",
+				profileId: "literature-searcher",
+				objective:
+					"Build an offline structured search strategy, query plan, candidate bibliography hints, and retrieval gaps.",
+				expectedArtifactKinds: ["literature-search-results"],
+				expectedOutputs: ["search strategy", "bibliography candidates", "retrieval gaps"],
+				acceptanceCriteria: ["Candidate bibliography is separated from verified evidence"],
+			},
+			{
+				id: "evidence-summary",
+				profileId: "researcher",
+				objective:
+					"Synthesize accepted search outputs into evidence summary, evidence table, and uncertainty notes.",
+				expectedArtifactKinds: ["evidence-table"],
+				expectedOutputs: ["evidence summary", "evidence-table", "uncertainty notes"],
+				acceptanceCriteria: ["Uncertainty is explicit"],
+			},
+		],
+	},
+	{
 		id: "citation-audit",
 		title: "Citation Audit",
 		description: "Check claim support before revision.",

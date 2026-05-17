@@ -7,6 +7,7 @@ import { SessionManager } from "@mariozechner/pi-agent-host";
 import { afterEach, describe, expect, it } from "vitest";
 import type { LeadAgentTaskRequest } from "../src/index.js";
 import { createLeadAgentRuntime, loadAcademicProfilesFromDir, parseAcademicProfileMarkdown } from "../src/index.js";
+import { summarizeWorkflowTemplatesForPlanner, WORKFLOW_TEMPLATES } from "../src/orchestration/index.js";
 import { buildLeadDirectMessage } from "../src/prompts.js";
 
 let tempDirs: string[] = [];
@@ -426,6 +427,194 @@ Use the custom audit role.
 		expect(result.acceptanceReport?.accepted).toBe(true);
 		expect(result.finalOutput).toContain("Located representative peer-reviewed sources");
 		expect(result.acceptanceReport?.issues.some((issue) => issue.code === "expected_output_missing")).toBe(false);
+	});
+
+	it("exposes literature search templates to the workflow planner", () => {
+		const summaries = summarizeWorkflowTemplatesForPlanner(WORKFLOW_TEMPLATES);
+		const literatureSearch = summaries.find((template) => template.id === "literature-search");
+		const literatureToEvidence = summaries.find((template) => template.id === "literature-to-evidence");
+
+		expect(literatureSearch).toMatchObject({
+			id: "literature-search",
+			steps: [{ profileId: "literature-searcher" }],
+		});
+		expect(literatureToEvidence).toMatchObject({
+			id: "literature-to-evidence",
+			steps: [{ profileId: "literature-searcher" }, { profileId: "researcher" }],
+		});
+	});
+
+	it("accepts literature-searcher outputs without requiring evidence synthesis", async () => {
+		const runtime = createLeadAgentRuntime({
+			cwd: makeTempDir(),
+			workflowPlanner: {
+				async plan(input) {
+					return {
+						taskId: input.taskId,
+						sessionId: input.sessionId,
+						objective: input.objective,
+						rationale: "The request asks for literature discovery, not evidence synthesis.",
+						userVisibleSummary: "I will run a literature searcher pass and return candidate search outputs.",
+						mode: "workflow",
+						steps: [
+							{
+								id: "literature-search",
+								order: 1,
+								profileId: "literature-searcher",
+								objective: `User objective: ${input.objective}\n\nStep objective: Build an offline structured search strategy and candidate bibliography hints.`,
+								inputArtifactRefs: input.inputArtifacts,
+								expectedArtifactKinds: ["literature-search-results"],
+								expectedOutputs: ["search strategy", "bibliography candidates", "retrieval gaps"],
+								acceptanceCriteria: ["Candidate bibliography is separated from verified evidence"],
+							},
+						],
+						stopConditions: ["Literature search plan accepted"],
+					};
+				},
+			},
+			workerRunner: async (request) => ({
+				taskId: request.taskId,
+				status: "success",
+				summary: "Offline structured literature search plan completed for NIR.",
+				structuredOutputs: {
+					"search strategy": {
+						retrievalMode: "offline-structured",
+						providerAvailable: false,
+					},
+					"bibliography candidates": ["near-infrared spectroscopy review candidates"],
+					"retrieval gaps": ["NIR application domain is broad"],
+				},
+				producedArtifacts: [],
+				artifactBriefs: [
+					{
+						artifactId: "nir-literature-search",
+						kind: "literature-search-results",
+						title: "NIR literature search plan",
+						brief: "Offline structured search plan and candidate bibliography hints.",
+						limitations: ["Not verified database retrieval results"],
+					},
+				],
+				warnings: ["Offline structured mode; verify candidates with a database search before citation use."],
+				openQuestions: [],
+				executionTrace: createExecutionTrace("run-literature-searcher"),
+			}),
+		});
+
+		const result = await runtime.run({
+			taskId: "task-literature-searcher",
+			objective: "帮我寻找一些关于NIR的文献",
+			expectedOutputs: ["search strategy", "bibliography candidates", "retrieval gaps"],
+		});
+
+		expect(result.decision).toMatchObject({
+			mode: "worker",
+			profileId: "literature-searcher",
+			workerType: "literature-searcher",
+		});
+		expect(result.acceptanceReport?.accepted).toBe(true);
+		expect(result.acceptanceReport?.issues.some((issue) => issue.code === "expected_output_missing")).toBe(false);
+		expect(result.finalOutput).toContain("Offline structured literature search plan completed");
+	});
+
+	it("carries literature-searcher artifact briefs into researcher synthesis", async () => {
+		const seenRequests: string[] = [];
+		const runtime = createLeadAgentRuntime({
+			cwd: makeTempDir(),
+			workflowPlanner: {
+				async plan(input) {
+					return {
+						taskId: input.taskId,
+						sessionId: input.sessionId,
+						objective: input.objective,
+						rationale: "The request needs search planning before evidence synthesis.",
+						userVisibleSummary: "I will search first, then synthesize evidence from the accepted search outputs.",
+						mode: "workflow",
+						steps: [
+							{
+								id: "literature-search",
+								order: 1,
+								profileId: "literature-searcher",
+								objective: `User objective: ${input.objective}\n\nStep objective: Build search strategy and bibliography candidates.`,
+								inputArtifactRefs: [],
+								expectedArtifactKinds: ["literature-search-results"],
+								expectedOutputs: ["search strategy", "bibliography candidates", "retrieval gaps"],
+								acceptanceCriteria: ["Candidate bibliography is separated from verified evidence"],
+							},
+							{
+								id: "evidence-summary",
+								order: 2,
+								profileId: "researcher",
+								objective: `User objective: ${input.objective}\n\nStep objective: Synthesize accepted search outputs into evidence notes.`,
+								inputArtifactRefs: [],
+								expectedArtifactKinds: ["evidence-table"],
+								expectedOutputs: ["evidence summary", "evidence-table", "uncertainty notes"],
+								acceptanceCriteria: ["Uncertainty is explicit"],
+							},
+						],
+						stopConditions: ["Evidence synthesis accepted"],
+					};
+				},
+			},
+			workerRunner: async (request): Promise<WorkerResult> => {
+				seenRequests.push(
+					`${request.workerType}:${request.inputArtifacts.map((artifact) => artifact.kind).join(",")}`,
+				);
+				if (request.workerType === "literature-searcher") {
+					return {
+						taskId: request.taskId,
+						status: "success",
+						summary: "search strategy, bibliography candidates, and retrieval gaps completed",
+						structuredOutputs: {
+							"search strategy": "offline structured",
+							"bibliography candidates": ["NIR spectroscopy review"],
+							"retrieval gaps": ["Specify application domain"],
+						},
+						producedArtifacts: [
+							{
+								id: "search-artifact-1",
+								kind: "literature-search-results",
+								uri: "memory://search-artifact-1",
+								title: "NIR search results",
+							},
+						],
+						artifactBriefs: [
+							{
+								artifactId: "search-artifact-1",
+								kind: "literature-search-results",
+								title: "NIR search results",
+								brief: "Search strategy and candidate bibliography hints.",
+							},
+						],
+						warnings: [],
+						openQuestions: [],
+						executionTrace: createExecutionTrace("run-searcher"),
+					};
+				}
+				return {
+					taskId: request.taskId,
+					status: "success",
+					summary: "evidence summary, evidence-table, and uncertainty notes completed",
+					structuredOutputs: {
+						"evidence summary": "NIR literature spans spectroscopy and imaging.",
+						"evidence-table": [{ topic: "NIR spectroscopy" }],
+						"uncertainty notes": ["Search candidates require database verification."],
+					},
+					producedArtifacts: [],
+					warnings: [],
+					openQuestions: [],
+					executionTrace: createExecutionTrace("run-researcher"),
+				};
+			},
+		});
+
+		const result = await runtime.run({
+			taskId: "task-literature-to-evidence",
+			objective: "寻找NIR相关文献并整理证据表",
+		});
+
+		expect(result.acceptanceReport?.accepted).toBe(true);
+		expect(result.workflowPlan?.steps.map((step) => step.profileId)).toEqual(["literature-searcher", "researcher"]);
+		expect(seenRequests).toEqual(["literature-searcher:", "researcher:literature-search-results"]);
 	});
 
 	it("rejects worker results that miss explicit expected outputs", async () => {
