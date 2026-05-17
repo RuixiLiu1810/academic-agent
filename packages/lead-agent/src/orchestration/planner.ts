@@ -19,6 +19,10 @@ export function validateWorkflowPlan(plan: unknown, context: PlannerValidationCo
 		return errors;
 	}
 
+	if (!Array.isArray(p.stopConditions) || !(p.stopConditions as unknown[]).every((c) => typeof c === "string")) {
+		errors.push("Plan stopConditions must be an array of strings");
+	}
+
 	const profileIds = new Set(context.profiles.map((profile) => profile.id));
 	const inputArtifactIds = new Set(context.inputArtifacts.map((a) => a.id));
 	const stepIds = new Set<string>();
@@ -66,9 +70,16 @@ export function validateWorkflowPlan(plan: unknown, context: PlannerValidationCo
 			if (!s.objective.includes("Step objective:")) {
 				errors.push(`Step ${stepId}: objective missing "Step objective:" section`);
 			}
+			// Detect truncated objectives: "Step objective:" must be followed by non-whitespace content
+			const stepObjMatch = s.objective.match(/Step objective:([\s\S]*)/);
+			if (stepObjMatch && stepObjMatch[1]!.trim().length === 0) {
+				errors.push(`Step ${stepId}: "Step objective:" section is empty or truncated`);
+			}
 		}
 
-		if (Array.isArray(s.inputArtifactRefs)) {
+		if (!Array.isArray(s.inputArtifactRefs)) {
+			errors.push(`Step ${stepId}: inputArtifactRefs must be an array`);
+		} else {
 			for (const ref of s.inputArtifactRefs as unknown[]) {
 				if (ref && typeof ref === "object" && !Array.isArray(ref)) {
 					const r = ref as Record<string, unknown>;
@@ -77,6 +88,24 @@ export function validateWorkflowPlan(plan: unknown, context: PlannerValidationCo
 					}
 				}
 			}
+		}
+
+		if (
+			!Array.isArray(s.expectedArtifactKinds) ||
+			!(s.expectedArtifactKinds as unknown[]).every((k) => typeof k === "string")
+		) {
+			errors.push(`Step ${stepId}: expectedArtifactKinds must be an array of strings`);
+		}
+
+		if (!Array.isArray(s.expectedOutputs) || !(s.expectedOutputs as unknown[]).every((o) => typeof o === "string")) {
+			errors.push(`Step ${stepId}: expectedOutputs must be an array of strings`);
+		}
+
+		if (
+			!Array.isArray(s.acceptanceCriteria) ||
+			!(s.acceptanceCriteria as unknown[]).every((c) => typeof c === "string")
+		) {
+			errors.push(`Step ${stepId}: acceptanceCriteria must be an array of strings`);
 		}
 	}
 
