@@ -149,6 +149,31 @@ export const DEFAULT_ACADEMIC_PROFILES: WorkerProfile[] = [
 		acceptanceChecklist: ["Evidence is separated from interpretation", "Uncertainty is explicit"],
 	},
 	{
+		id: "literature-searcher",
+		name: "Literature Searcher",
+		description: "Plans and triages academic literature searches before evidence synthesis.",
+		capabilities: [
+			"literature-search",
+			"search-strategy",
+			"query-planning",
+			"bibliography-triage",
+			"screening-plan",
+			"retrieval-gap-analysis",
+		],
+		expectedOutputs: [
+			"search strategy",
+			"query plan",
+			"bibliography candidates",
+			"screening notes",
+			"retrieval gaps",
+		],
+		acceptanceChecklist: [
+			"Search scope and key concepts are explicit",
+			"Candidate bibliography is separated from verified evidence",
+			"Retrieval gaps and database limitations are explicit",
+		],
+	},
+	{
 		id: "reviewer",
 		name: "Reviewer",
 		description: "Critically reviews manuscripts and response materials.",

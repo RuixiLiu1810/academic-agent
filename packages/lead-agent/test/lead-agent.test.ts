@@ -31,6 +31,7 @@ describe("lead-agent runtime", () => {
 
 		expect(profiles.map((profile) => profile.id)).toEqual([
 			"citation-checker",
+			"literature-searcher",
 			"method-auditor",
 			"researcher",
 			"reviewer",
@@ -40,6 +41,11 @@ describe("lead-agent runtime", () => {
 		expect(citationChecker?.rolePrompt).toContain("claim-support checker");
 		expect(citationChecker?.expectedOutputs).toContain("citation audit");
 		expect(citationChecker?.acceptanceChecklist).toContain("Unsupported claims are identified");
+		const searcher = profiles.find((profile) => profile.id === "literature-searcher");
+		expect(searcher?.rolePrompt).toContain("literature search planner");
+		expect(searcher?.expectedOutputs).toContain("search strategy");
+		expect(searcher?.expectedOutputs).toContain("bibliography candidates");
+		expect(searcher?.acceptanceChecklist).toContain("Candidate bibliography is separated from verified evidence");
 	});
 
 	it("parses standalone profile markdown into worker profile fields", () => {

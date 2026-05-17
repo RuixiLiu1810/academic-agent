@@ -10,6 +10,9 @@ export const ACADEMIC_ARTIFACT_KINDS = {
 	reviewCommentMap: "review-comment-map",
 	revisionPlan: "revision-plan",
 	responseLetterDraft: "response-letter-draft",
+	literatureSearchResults: "literature-search-results",
+	bibliographyCandidates: "bibliography-candidates",
+	searchStrategy: "search-strategy",
 } as const;
 
 export type AcademicArtifactKind = (typeof ACADEMIC_ARTIFACT_KINDS)[keyof typeof ACADEMIC_ARTIFACT_KINDS];
