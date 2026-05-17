@@ -369,6 +369,59 @@ Use the custom audit role.
 		expect(result.artifactBriefs).toEqual(workerResult.artifactBriefs);
 	});
 
+	it("accepts researcher outputs when structured labels use camelCase or headings", async () => {
+		const runtime = createLeadAgentRuntime({
+			cwd: makeTempDir(),
+			workflowPlanner: {
+				async plan(input) {
+					return {
+						taskId: input.taskId,
+						sessionId: input.sessionId,
+						objective: input.objective,
+						rationale: "The request needs a researcher evidence pass.",
+						userVisibleSummary: "I will run the Researcher worker and synthesize the accepted result.",
+						mode: "workflow",
+						steps: [
+							{
+								id: "researcher",
+								order: 1,
+								profileId: "researcher",
+								objective: `User objective: ${input.objective}\n\nStep objective: Find representative NIR literature and return an evidence table with uncertainty notes.`,
+								inputArtifactRefs: [],
+								expectedArtifactKinds: ["evidence-table"],
+								expectedOutputs: ["evidence-table", "uncertainty notes"],
+								acceptanceCriteria: ["Evidence is separated from interpretation"],
+							},
+						],
+						stopConditions: ["Researcher output accepted"],
+					};
+				},
+			},
+			workerRunner: async (request) => ({
+				taskId: request.taskId,
+				status: "success",
+				summary: "Located representative peer-reviewed sources on NIR.",
+				structuredOutputs: {
+					evidenceTable: [{ title: "Near-infrared spectroscopy review" }],
+					rawAssistantText: "## Evidence Table\n\nFive NIR sources.\n\n## Uncertainty Notes\n\nDomain is broad.",
+				},
+				producedArtifacts: [],
+				warnings: [],
+				openQuestions: [{ question: "Which NIR application should be prioritized?" }],
+				executionTrace: createExecutionTrace("run-nir"),
+			}),
+		});
+
+		const result = await runtime.run({
+			taskId: "task-nir-literature",
+			objective: "帮我寻找一些关于NIR的文献",
+		});
+
+		expect(result.acceptanceReport?.accepted).toBe(true);
+		expect(result.finalOutput).toContain("Located representative peer-reviewed sources");
+		expect(result.acceptanceReport?.issues.some((issue) => issue.code === "expected_output_missing")).toBe(false);
+	});
+
 	it("rejects worker results that miss explicit expected outputs", async () => {
 		const workerResult: WorkerResult = {
 			taskId: "task-expected-output",

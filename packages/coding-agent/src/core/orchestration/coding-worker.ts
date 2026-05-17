@@ -1,4 +1,5 @@
 import type {
+	ArtifactBrief,
 	ArtifactRef,
 	ExecutionTrace,
 	JsonObject,
@@ -7,7 +8,7 @@ import type {
 	WorkerRequest,
 	WorkerResult,
 } from "@mariozechner/pi-agent-contracts";
-import { createExecutionTrace, isArtifactRef } from "@mariozechner/pi-agent-contracts";
+import { createExecutionTrace, isArtifactBrief, isArtifactRef } from "@mariozechner/pi-agent-contracts";
 import type { AgentMessage } from "@mariozechner/pi-agent-core";
 import type { AgentSession } from "@mariozechner/pi-agent-host/agent-session";
 import { SessionManager } from "@mariozechner/pi-agent-host/session-manager";
@@ -26,6 +27,7 @@ interface ParsedWorkerOutput {
 	summary?: string;
 	structuredOutputs?: JsonObject;
 	producedArtifacts: ArtifactRef[];
+	artifactBriefs: ArtifactBrief[];
 	warnings: string[];
 	openQuestions: WorkerOpenQuestion[];
 	parseWarning?: string;
@@ -165,6 +167,7 @@ function parseWorkerOutput(text: string): ParsedWorkerOutput {
 	if (!json) {
 		return {
 			producedArtifacts: [],
+			artifactBriefs: [],
 			warnings: [],
 			openQuestions: [],
 		};
@@ -176,6 +179,7 @@ function parseWorkerOutput(text: string): ParsedWorkerOutput {
 		const message = error instanceof Error ? error.message : String(error);
 		return {
 			producedArtifacts: [],
+			artifactBriefs: [],
 			warnings: [],
 			openQuestions: [],
 			parseWarning: `Could not parse WORKER_RESULT_JSON: ${message}`,
@@ -184,6 +188,7 @@ function parseWorkerOutput(text: string): ParsedWorkerOutput {
 	if (!isRecord(parsed)) {
 		return {
 			producedArtifacts: [],
+			artifactBriefs: [],
 			warnings: [],
 			openQuestions: [],
 			parseWarning: "WORKER_RESULT_JSON must be an object.",
@@ -192,10 +197,12 @@ function parseWorkerOutput(text: string): ParsedWorkerOutput {
 	const producedArtifacts = Array.isArray(parsed.producedArtifacts)
 		? parsed.producedArtifacts.filter(isArtifactRef)
 		: [];
+	const artifactBriefs = Array.isArray(parsed.artifactBriefs) ? parsed.artifactBriefs.filter(isArtifactBrief) : [];
 	return {
 		summary: typeof parsed.summary === "string" ? parsed.summary : undefined,
 		structuredOutputs: isJsonObject(parsed.structuredOutputs) ? parsed.structuredOutputs : undefined,
 		producedArtifacts,
+		artifactBriefs,
 		warnings: isStringArray(parsed.warnings) ? parsed.warnings : [],
 		openQuestions: isStringArray(parsed.openQuestions) ? parsed.openQuestions.map((q) => ({ question: q })) : [],
 		parseWarning:
@@ -241,13 +248,32 @@ export function buildCodingWorkerPrompt(request: WorkerRequest, promptPrefix?: s
 				.join("\n")}`,
 		);
 	}
-	sections.push(`Return a concise human-readable answer, then include this machine-readable block:
+	sections.push(`Return a concise human-readable answer, then include this machine-readable block.
+Use exact expected output labels as structuredOutputs keys when possible, preserving spelling such as "evidence-table".
+For durable deliverables, include producedArtifacts with matching kind values and artifactBriefs that summarize each artifact.
 
 WORKER_RESULT_JSON:
 {
   "summary": "Concise result summary",
-  "structuredOutputs": {},
-  "producedArtifacts": [],
+  "structuredOutputs": {
+    "expected-output-label": {}
+  },
+  "producedArtifacts": [
+    {
+      "id": "artifact-id",
+      "kind": "expected-output-label",
+      "uri": "memory://artifact-id",
+      "title": "Artifact title"
+    }
+  ],
+  "artifactBriefs": [
+    {
+      "artifactId": "artifact-id",
+      "kind": "expected-output-label",
+      "title": "Artifact title",
+      "brief": "Brief artifact summary"
+    }
+  ],
   "warnings": [],
   "openQuestions": []
 }`);
@@ -340,6 +366,7 @@ export async function runCodingWorker(
 				parsedOutput.structuredOutputs,
 			),
 			producedArtifacts: parsedOutput.producedArtifacts,
+			artifactBriefs: parsedOutput.artifactBriefs.length > 0 ? parsedOutput.artifactBriefs : undefined,
 			warnings,
 			openQuestions: parsedOutput.openQuestions,
 			executionTrace: trace,

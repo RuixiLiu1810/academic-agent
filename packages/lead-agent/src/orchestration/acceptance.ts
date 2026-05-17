@@ -1,6 +1,7 @@
 import type {
 	AcceptanceIssue,
 	AcceptanceReport,
+	ArtifactBrief,
 	ArtifactRef,
 	JsonValue,
 	WorkerRequest,
@@ -12,16 +13,41 @@ function normalizeForMatch(value: string): string {
 	return value.trim().toLowerCase();
 }
 
+function normalizeSemanticLabel(value: string): string {
+	return value
+		.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+		.normalize("NFKC")
+		.toLowerCase()
+		.replace(/[^\p{Letter}\p{Number}]+/gu, "");
+}
+
 function textIncludesExpected(text: string, expected: string): boolean {
 	const normalizedText = normalizeForMatch(text);
 	const normalizedExpected = normalizeForMatch(expected);
-	return normalizedExpected.length === 0 || normalizedText.includes(normalizedExpected);
+	const semanticText = normalizeSemanticLabel(text);
+	const semanticExpected = normalizeSemanticLabel(expected);
+	return (
+		normalizedExpected.length === 0 ||
+		normalizedText.includes(normalizedExpected) ||
+		(semanticExpected.length > 0 && semanticText.includes(semanticExpected))
+	);
 }
 
 function artifactMatchesExpected(artifact: ArtifactRef, expected: string): boolean {
 	return [artifact.id, artifact.kind, artifact.uri, artifact.title ?? "", artifact.mediaType ?? ""].some((value) =>
 		textIncludesExpected(value, expected),
 	);
+}
+
+function artifactBriefMatchesExpected(artifactBrief: ArtifactBrief, expected: string): boolean {
+	return [
+		artifactBrief.artifactId,
+		artifactBrief.kind,
+		artifactBrief.title ?? "",
+		artifactBrief.brief,
+		...(artifactBrief.keyFindings ?? []),
+		...(artifactBrief.limitations ?? []),
+	].some((value) => textIncludesExpected(value, expected));
 }
 
 function jsonValueMatchesExpected(value: JsonValue | undefined, expected: string): boolean {
@@ -46,6 +72,9 @@ export function workerResultSatisfiesExpectedOutput(workerResult: WorkerResult, 
 	return (
 		textIncludesExpected(workerResult.summary, expectedOutput) ||
 		workerResult.producedArtifacts.some((artifact) => artifactMatchesExpected(artifact, expectedOutput)) ||
+		(workerResult.artifactBriefs ?? []).some((artifactBrief) =>
+			artifactBriefMatchesExpected(artifactBrief, expectedOutput),
+		) ||
 		jsonValueMatchesExpected(workerResult.structuredOutputs, expectedOutput)
 	);
 }

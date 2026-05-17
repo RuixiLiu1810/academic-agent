@@ -33,6 +33,14 @@ WORKER_RESULT_JSON:
       "title": "Evidence table"
     }
   ],
+  "artifactBriefs": [
+    {
+      "artifactId": "artifact-1",
+      "kind": "evidence-table",
+      "title": "Evidence table",
+      "brief": "Three evidence rows were extracted."
+    }
+  ],
   "warnings": ["One source needs manual citation review."],
   "openQuestions": ["Should the lead agent revise the background section?"]
 }`),
@@ -66,6 +74,14 @@ WORKER_RESULT_JSON:
 		]);
 		expect(result.warnings).toEqual(["One source needs manual citation review."]);
 		expect(result.openQuestions).toEqual([{ question: "Should the lead agent revise the background section?" }]);
+		expect(result.artifactBriefs).toEqual([
+			{
+				artifactId: "artifact-1",
+				kind: "evidence-table",
+				title: "Evidence table",
+				brief: "Three evidence rows were extracted.",
+			},
+		]);
 		expect(result.structuredOutputs?.evidenceCount).toBe(3);
 		expect(result.structuredOutputs?.sessionId).toBe(harness.session.sessionId);
 	});
@@ -84,6 +100,8 @@ WORKER_RESULT_JSON:
 		expect(prompt).toContain("Use manuscript only");
 		expect(prompt).toContain("claim audit");
 		expect(prompt).toContain("no unsupported claims");
+		expect(prompt).toContain("Use exact expected output labels as structuredOutputs keys");
+		expect(prompt).toContain("artifactBriefs");
 		expect(prompt).toContain("WORKER_RESULT_JSON");
 	});
 
