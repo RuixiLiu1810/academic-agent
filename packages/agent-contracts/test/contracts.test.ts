@@ -109,6 +109,40 @@ describe("agent contracts", () => {
 		expect(isWorkerRequest(parsed)).toBe(true);
 	});
 
+	it("round-trips tool-aware worker profiles through worker requests", () => {
+		const request: WorkerRequest = {
+			taskId: "task-tool-profile",
+			workerType: "literature-searcher",
+			objective: "Find NIR literature.",
+			constraints: [],
+			inputArtifacts: [],
+			expectedOutputs: ["literature-search-results"],
+			acceptanceCriteria: ["Provider provenance is recorded"],
+			profile: {
+				id: "literature-searcher",
+				name: "Literature Searcher",
+				capabilities: ["literature-search"],
+				allowedTools: ["literature.search"],
+				toolPolicy: {
+					maxCalls: 2,
+					defaultProviders: ["crossref", "semantic-scholar"],
+					allowedProviders: ["crossref", "semantic-scholar", "pubmed", "arxiv"],
+					maxResultsPerProvider: 10,
+					timeoutMs: 12000,
+					requireArtifactOutput: true,
+					allowRefresh: false,
+				},
+				inputRequirements: ["Research question or search topic"],
+				boundaries: ["Do not invent retrieved papers"],
+			},
+		};
+
+		const parsed = deserializeWorkerRequest(serializeContract(request));
+
+		expect(parsed).toEqual(request);
+		expect(isWorkerRequest(parsed)).toBe(true);
+	});
+
 	it("round-trips worker results through JSON serialization", () => {
 		const result: WorkerResult = {
 			taskId: "task-roundtrip",

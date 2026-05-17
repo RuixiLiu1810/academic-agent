@@ -57,6 +57,16 @@ export interface WorkerRetryPolicy {
 	retryableStatuses?: WorkerResultStatus[];
 }
 
+export interface WorkerToolPolicy {
+	maxCalls?: number;
+	defaultProviders?: string[];
+	allowedProviders?: string[];
+	maxResultsPerProvider?: number;
+	timeoutMs?: number;
+	requireArtifactOutput?: boolean;
+	allowRefresh?: boolean;
+}
+
 export interface WorkerProfile {
 	id: string;
 	name: string;
@@ -65,6 +75,10 @@ export interface WorkerProfile {
 	capabilities: string[];
 	expectedOutputs?: string[];
 	acceptanceChecklist?: string[];
+	allowedTools?: string[];
+	toolPolicy?: WorkerToolPolicy;
+	inputRequirements?: string[];
+	boundaries?: string[];
 }
 
 export interface WorkerRequest {
@@ -179,6 +193,20 @@ const jsonObjectSchema: JsonObject = {
 	additionalProperties: true,
 };
 
+const workerToolPolicySchema: JsonObject = {
+	type: "object",
+	properties: {
+		maxCalls: { type: "number" },
+		defaultProviders: stringArraySchema,
+		allowedProviders: stringArraySchema,
+		maxResultsPerProvider: { type: "number" },
+		timeoutMs: { type: "number" },
+		requireArtifactOutput: { type: "boolean" },
+		allowRefresh: { type: "boolean" },
+	},
+	additionalProperties: false,
+};
+
 export const ArtifactRefSchema: JsonObject = {
 	$schema: "https://json-schema.org/draft/2020-12/schema",
 	$id: "https://pi.local/schemas/agent-contracts/artifact-ref.json",
@@ -275,6 +303,10 @@ export const WorkerProfileSchema: JsonObject = {
 		capabilities: stringArraySchema,
 		expectedOutputs: stringArraySchema,
 		acceptanceChecklist: stringArraySchema,
+		allowedTools: stringArraySchema,
+		toolPolicy: workerToolPolicySchema,
+		inputRequirements: stringArraySchema,
+		boundaries: stringArraySchema,
 	},
 	additionalProperties: false,
 };
@@ -584,6 +616,21 @@ function isWorkerRetryPolicy(value: unknown): value is WorkerRetryPolicy {
 	);
 }
 
+function isWorkerToolPolicy(value: unknown): value is WorkerToolPolicy {
+	if (!isRecord(value)) {
+		return false;
+	}
+	return (
+		(value.maxCalls === undefined || typeof value.maxCalls === "number") &&
+		(value.defaultProviders === undefined || isStringArray(value.defaultProviders)) &&
+		(value.allowedProviders === undefined || isStringArray(value.allowedProviders)) &&
+		(value.maxResultsPerProvider === undefined || typeof value.maxResultsPerProvider === "number") &&
+		(value.timeoutMs === undefined || typeof value.timeoutMs === "number") &&
+		(value.requireArtifactOutput === undefined || typeof value.requireArtifactOutput === "boolean") &&
+		(value.allowRefresh === undefined || typeof value.allowRefresh === "boolean")
+	);
+}
+
 export function isWorkerProfile(value: unknown): value is WorkerProfile {
 	if (!isRecord(value)) {
 		return false;
@@ -595,7 +642,11 @@ export function isWorkerProfile(value: unknown): value is WorkerProfile {
 		hasOptionalString(value, "rolePrompt") &&
 		isStringArray(value.capabilities) &&
 		hasOptionalStringArray(value, "expectedOutputs") &&
-		hasOptionalStringArray(value, "acceptanceChecklist")
+		hasOptionalStringArray(value, "acceptanceChecklist") &&
+		hasOptionalStringArray(value, "allowedTools") &&
+		(value.toolPolicy === undefined || isWorkerToolPolicy(value.toolPolicy)) &&
+		hasOptionalStringArray(value, "inputRequirements") &&
+		hasOptionalStringArray(value, "boundaries")
 	);
 }
 
