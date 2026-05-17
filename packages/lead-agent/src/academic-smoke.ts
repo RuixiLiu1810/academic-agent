@@ -42,6 +42,7 @@ export interface RunAcademicSmokeSuiteOptions {
 	fixtureDir?: string;
 	artifactDir?: string;
 	workerRunner?: LeadAgentWorkerRunner;
+	liveLiteratureSearch?: boolean;
 }
 
 export const DEFAULT_ACADEMIC_SMOKE_CASES: AcademicSmokeCase[] = [
@@ -281,12 +282,34 @@ function failuresForCase(testCase: AcademicSmokeCase, result: LeadAgentResult): 
 	return failures;
 }
 
+function failedSmokeResult(testCase: AcademicSmokeCase, error: unknown): LeadAgentResult {
+	const message = error instanceof Error ? error.message : String(error);
+	return {
+		taskId: testCase.id,
+		finalOutput: `Smoke case failed: ${message}`,
+		decision: {
+			mode: testCase.expectedOutputs.length > 0 ? "worker" : "direct",
+			profileId: testCase.expectedProfileId,
+			workerType: testCase.expectedProfileId,
+			reason: "Smoke case failed before producing a result.",
+		},
+		sessionId: "academic-smoke",
+		acceptanceReport: {
+			taskId: testCase.id,
+			accepted: false,
+			checkedAt: new Date().toISOString(),
+			issues: [{ code: "smoke_case_failed", message, severity: "error" }],
+		},
+	};
+}
+
 export async function runAcademicSmokeSuite(
 	options: RunAcademicSmokeSuiteOptions = {},
 ): Promise<AcademicSmokeSuiteResult> {
 	const fixtureDir = options.fixtureDir ?? defaultFixtureDir();
 	const store = createStore(options);
-	const workerRunner = options.workerRunner ?? deterministicWorkerRunner(store);
+	const workerRunner =
+		options.workerRunner ?? (options.liveLiteratureSearch ? undefined : deterministicWorkerRunner(store));
 	const tempCwd = options.artifactDir ? undefined : mkdtempSync(join(tmpdir(), "lead-agent-smoke-workspace-"));
 	const runtime = createLeadAgentRuntime({
 		cwd: tempCwd,
@@ -300,12 +323,17 @@ export async function runAcademicSmokeSuite(
 	try {
 		for (const testCase of DEFAULT_ACADEMIC_SMOKE_CASES) {
 			const context = readFixtureContext(fixtureDir, testCase.fixtureFiles);
-			const result = await runtime.run({
-				taskId: testCase.id,
-				objective: testCase.objective,
-				constraints: [`Fixture context:\n\n${context}`],
-				expectedOutputs: testCase.expectedOutputs.length > 0 ? testCase.expectedOutputs : undefined,
-			});
+			let result: LeadAgentResult;
+			try {
+				result = await runtime.run({
+					taskId: testCase.id,
+					objective: testCase.objective,
+					constraints: [`Fixture context:\n\n${context}`],
+					expectedOutputs: testCase.expectedOutputs.length > 0 ? testCase.expectedOutputs : undefined,
+				});
+			} catch (error) {
+				result = failedSmokeResult(testCase, error);
+			}
 			const failures = failuresForCase(testCase, result);
 			results.push({
 				caseId: testCase.id,

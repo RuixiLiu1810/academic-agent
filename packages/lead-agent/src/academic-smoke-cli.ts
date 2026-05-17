@@ -5,6 +5,7 @@ interface CliOptions {
 	artifactDir?: string;
 	json: boolean;
 	help: boolean;
+	liveLiteratureSearch: boolean;
 }
 
 function usage(): string {
@@ -12,6 +13,7 @@ function usage(): string {
 
 Options:
   --artifact-dir <path>   Persist smoke artifacts and manifest to this directory
+  --live-literature-search Use real default literature retrieval wiring instead of deterministic smoke worker
   --json                  Print the full smoke suite result as JSON
   --help                  Show this help`;
 }
@@ -28,6 +30,7 @@ function parseArgs(args: string[]): CliOptions {
 	const options: CliOptions = {
 		json: false,
 		help: false,
+		liveLiteratureSearch: false,
 	};
 	for (let index = 0; index < args.length; index++) {
 		const arg = args[index]!;
@@ -38,6 +41,9 @@ function parseArgs(args: string[]): CliOptions {
 				break;
 			case "--json":
 				options.json = true;
+				break;
+			case "--live-literature-search":
+				options.liveLiteratureSearch = true;
 				break;
 			case "--help":
 			case "-h":
@@ -58,6 +64,7 @@ async function main(): Promise<void> {
 	}
 	const result = await runAcademicSmokeSuite({
 		artifactDir: options.artifactDir,
+		liveLiteratureSearch: options.liveLiteratureSearch,
 	});
 	if (options.json) {
 		console.log(JSON.stringify(result, null, 2));

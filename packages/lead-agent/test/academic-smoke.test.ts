@@ -56,6 +56,15 @@ describe("academic workflow smoke suite", () => {
 			"evidence-table",
 			"outline",
 		]);
+		const literatureCase = result.results.find((entry) => entry.caseId === "literature-search");
+		expect(literatureCase?.result.artifactBriefs?.some((brief) => brief.kind === "literature-search-results")).toBe(
+			true,
+		);
+		expect(
+			literatureCase?.result.workerResult?.producedArtifacts.some(
+				(artifact) => artifact.kind === "literature-search-results",
+			),
+		).toBe(true);
 		const paperOrchestraCase = result.results.find(
 			(caseResult) => caseResult.caseId === "mini-paperorchestra-inputs",
 		);
