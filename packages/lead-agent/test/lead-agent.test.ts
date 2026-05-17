@@ -285,7 +285,14 @@ Use the custom audit role.
 				status: "success",
 				summary: "review memo completed",
 				structuredOutputs: { expectedOutputs: request.expectedOutputs },
-				producedArtifacts: [],
+				producedArtifacts: [
+					{
+						id: "nir-literature-search",
+						kind: "literature-search-results",
+						uri: "memory://nir-literature-search",
+						title: "NIR candidate bibliography",
+					},
+				],
 				warnings: [],
 				openQuestions: [],
 				executionTrace: createExecutionTrace("run-workflow-events"),
@@ -518,7 +525,14 @@ Use the custom audit role.
 					"bibliography candidates": ["near-infrared spectroscopy review candidates"],
 					"retrieval gaps": ["NIR application domain is broad"],
 				},
-				producedArtifacts: [],
+				producedArtifacts: [
+					{
+						id: "nir-literature-search",
+						kind: "literature-search-results",
+						uri: "memory://nir-literature-search",
+						title: "NIR candidate bibliography",
+					},
+				],
 				artifactBriefs: [
 					{
 						artifactId: "nir-literature-search",
@@ -680,6 +694,40 @@ Use the custom audit role.
 			severity: "error",
 		});
 		expect(result.finalOutput).toContain("not accepted");
+	});
+
+	it("keeps explicit worker runner override for literature tasks", async () => {
+		let called = false;
+		const runtime = createLeadAgentRuntime({
+			workerRunner: async (request) => {
+				called = true;
+				return {
+					taskId: request.taskId,
+					status: "success",
+					summary: "custom runner",
+					producedArtifacts: [{ id: "artifact-1", kind: "literature-search-results", uri: "memory://artifact-1" }],
+					artifactBriefs: [
+						{
+							artifactId: "artifact-1",
+							kind: "literature-search-results",
+							brief: "custom runner artifact",
+						},
+					],
+					warnings: [],
+					openQuestions: [],
+					executionTrace: createExecutionTrace("custom-runner"),
+				};
+			},
+		});
+
+		const result = await runtime.run({
+			taskId: "task-custom-runner",
+			objective: "帮我寻找一些关于NIR的文献",
+			expectedOutputs: ["literature-search-results"],
+		});
+
+		expect(called).toBe(true);
+		expect(result.acceptanceReport?.accepted).toBe(true);
 	});
 
 	it("records lead decisions in a caller-provided host session", async () => {

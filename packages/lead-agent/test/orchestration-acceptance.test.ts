@@ -65,6 +65,14 @@ describe("lead acceptance", () => {
 		const report = createLeadAcceptanceReport(
 			request(["search strategy", "bibliography candidates", "retrieval gaps"]),
 			result({
+				producedArtifacts: [
+					{
+						id: "search-artifact-1",
+						kind: "literature-search-results",
+						uri: "memory://search-artifact-1",
+						title: "NIR search strategy",
+					},
+				],
 				artifactBriefs: [
 					{
 						artifactId: "search-artifact-1",
@@ -79,6 +87,29 @@ describe("lead acceptance", () => {
 		);
 
 		expect(report.accepted).toBe(true);
+	});
+
+	it("rejects provider-backed literature search without artifact refs", () => {
+		const baseRequest = request(["literature-search-results"]);
+		const report = createLeadAcceptanceReport(
+			{
+				...baseRequest,
+				workerType: "literature-searcher",
+				expectedOutputs: ["literature-search-results"],
+			},
+			result({
+				status: "success",
+				summary: "Provider-backed search completed.",
+				structuredOutputs: {
+					literatureSearchRuns: ["run-1"],
+				},
+				producedArtifacts: [],
+				artifactBriefs: [],
+			}),
+		);
+
+		expect(report.accepted).toBe(false);
+		expect(report.issues.some((issue) => issue.code === "expected_output_missing")).toBe(true);
 	});
 
 	it("still rejects genuinely missing expected outputs", () => {

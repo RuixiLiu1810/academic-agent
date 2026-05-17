@@ -3,11 +3,10 @@ import { createAgentHostSession } from "@mariozechner/pi-agent-host";
 import type { ToolDefinition } from "@mariozechner/pi-agent-host/extensions";
 import type { ToolResultMessage } from "@mariozechner/pi-ai";
 import type { ArtifactStore } from "@mariozechner/pi-artifact-core";
-import type { TSchema } from "typebox";
 import type { LiteratureSearchToolOutput } from "../literature/types.js";
 import type { LeadAgentWorkerRunner } from "../orchestration/types.js";
 
-type ProfileToolDefinition = ToolDefinition<TSchema, unknown, unknown>;
+type ProfileToolDefinition = ToolDefinition;
 
 export interface CreateProfileWorkerRunnerOptions {
 	cwd: string;

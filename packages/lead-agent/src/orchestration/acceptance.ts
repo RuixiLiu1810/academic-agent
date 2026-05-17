@@ -21,6 +21,15 @@ function normalizeSemanticLabel(value: string): string {
 		.replace(/[^\p{Letter}\p{Number}]+/gu, "");
 }
 
+function normalizeOutputLabel(value: string): string {
+	return normalizeSemanticLabel(value);
+}
+
+function requiresArtifactRef(expectedOutput: string): boolean {
+	const normalized = normalizeOutputLabel(expectedOutput);
+	return normalized === "literaturesearchresults" || normalized === "bibliographycandidates";
+}
+
 function textIncludesExpected(text: string, expected: string): boolean {
 	const normalizedText = normalizeForMatch(text);
 	const normalizedExpected = normalizeForMatch(expected);
@@ -92,6 +101,14 @@ export function acceptanceIssuesForWorkerResult(
 		});
 	}
 	for (const expectedOutput of workerRequest.expectedOutputs) {
+		if (requiresArtifactRef(expectedOutput) && workerResult.producedArtifacts.length === 0) {
+			issues.push({
+				code: "expected_output_missing",
+				message: `Worker result did not satisfy expected output: ${expectedOutput}`,
+				severity: "error",
+			});
+			continue;
+		}
 		if (!workerResultSatisfiesExpectedOutput(workerResult, expectedOutput)) {
 			issues.push({
 				code: "expected_output_missing",

@@ -18,7 +18,13 @@ import {
 	type ModelRegistry,
 	SessionManager,
 } from "@mariozechner/pi-agent-host";
+import type { ToolDefinition } from "@mariozechner/pi-agent-host/extensions";
 import type { ArtifactStore } from "@mariozechner/pi-artifact-core";
+import { createArxivProvider } from "./literature/providers/arxiv.js";
+import { createCrossrefProvider } from "./literature/providers/crossref.js";
+import { createPubMedProvider } from "./literature/providers/pubmed.js";
+import { createSemanticScholarProvider } from "./literature/providers/semantic-scholar.js";
+import { createLiteratureSearchTool } from "./literature/tools.js";
 import {
 	createFauxWorkflowPlanner,
 	createLeadSessionWorkspace,
@@ -34,7 +40,7 @@ import {
 	type WorkflowPlanner,
 } from "./orchestration/index.js";
 import { buildLeadDirectMessage, LEAD_AGENT_SYSTEM_PROMPT } from "./prompts.js";
-import { dispatchCodingWorker } from "./workers/coding-worker-dispatcher.js";
+import { createProfileWorkerRunner } from "./workers/profile-worker-runner.js";
 
 export type AcademicTaskType = "writing" | "research" | "review" | "revision" | "methods" | "citation";
 export type LeadAgentDispatchMode = "auto" | "direct" | "worker";
@@ -104,10 +110,19 @@ export interface LeadAgentResult {
 export type LeadAgentDirectRunner = (request: LeadAgentTaskRequest) => Promise<string>;
 export type { LeadAgentWorkerRunner } from "./orchestration/index.js";
 
+export interface LiteratureSearchConfig {
+	contactEmail?: string;
+	semanticScholarApiKey?: string;
+	ncbiApiKey?: string;
+	ncbiTool?: string;
+	ncbiEmail?: string;
+}
+
 export interface LeadAgentRuntimeOptions {
 	workerRunner?: LeadAgentWorkerRunner;
 	directRunner?: LeadAgentDirectRunner;
 	workflowPlanner?: WorkflowPlanner;
+	literatureSearch?: LiteratureSearchConfig;
 	workspace?: LeadSessionWorkspace;
 	artifactDir?: string;
 	artifactStore?: Pick<ArtifactStore, "get">;
@@ -723,9 +738,38 @@ function latestWorkflowWorkerResult(stepResults: readonly { workerResult?: Worke
 	return undefined;
 }
 
+function createDefaultWorkflowWorkerRunner(
+	cwd: string,
+	workspace: LeadSessionWorkspace,
+	config: LiteratureSearchConfig | undefined,
+): LeadAgentWorkerRunner {
+	const literatureTool = createLiteratureSearchTool({
+		store: workspace.store,
+		providers: [
+			createCrossrefProvider({
+				mailto: config?.contactEmail ?? process.env.CROSSREF_MAILTO ?? process.env.PI_LITERATURE_CONTACT_EMAIL,
+			}),
+			createSemanticScholarProvider({
+				apiKey: config?.semanticScholarApiKey ?? process.env.SEMANTIC_SCHOLAR_API_KEY,
+			}),
+			createPubMedProvider({
+				apiKey: config?.ncbiApiKey ?? process.env.NCBI_API_KEY,
+				tool: config?.ncbiTool ?? process.env.NCBI_TOOL,
+				email: config?.ncbiEmail ?? process.env.NCBI_EMAIL ?? process.env.PI_LITERATURE_CONTACT_EMAIL,
+			}),
+			createArxivProvider(),
+		],
+	});
+	const literatureToolDefinition = literatureTool as unknown as ToolDefinition;
+	return createProfileWorkerRunner({
+		cwd,
+		store: workspace.store,
+		toolDefinitions: [literatureToolDefinition],
+	});
+}
+
 export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): LeadAgentRuntime {
 	const profiles = options.profiles ?? loadAcademicProfilesFromDir();
-	const workerRunner = options.workerRunner ?? dispatchCodingWorker;
 	// Priority: 1. injected workflowPlanner  2. plannerModel → LLM planner  3. direct-mode stub fallback
 	const workflowPlanner =
 		options.workflowPlanner ??
@@ -884,6 +928,9 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 				sessionId,
 				artifactDir: options.artifactDir,
 			});
+		const workerRunner =
+			options.workerRunner ??
+			createDefaultWorkflowWorkerRunner(sessionManager.getCwd(), workspace, options.literatureSearch);
 		const execution = await executeWorkflowPlan({
 			plan: workflowPlan,
 			profiles,
