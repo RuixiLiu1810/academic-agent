@@ -1,12 +1,17 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ArtifactRef, WorkerRequest, WorkerResult } from "@mariozechner/pi-agent-contracts";
+import type {
+	ArtifactOutputRequirement,
+	ArtifactRef,
+	WorkerRequest,
+	WorkerResult,
+} from "@mariozechner/pi-agent-contracts";
 import { createExecutionTrace } from "@mariozechner/pi-agent-contracts";
 import {
 	ACADEMIC_ARTIFACT_KINDS,
 	type ArtifactStore,
-	createAcademicArtifact,
+	artifactToRef,
 	FileSystemArtifactStore,
 	MemoryArtifactStore,
 } from "@mariozechner/pi-artifact-core";
@@ -117,29 +122,36 @@ function createStore(options: RunAcademicSmokeSuiteOptions): ArtifactStore {
 
 function deterministicWorkerRunner(store: ArtifactStore): LeadAgentWorkerRunner {
 	return async (request: WorkerRequest): Promise<WorkerResult> => {
-		const artifact = createAcademicArtifact(store, {
-			kind:
-				request.workerType === "literature-searcher"
-					? ACADEMIC_ARTIFACT_KINDS.literatureSearchResults
-					: request.workerType === "citation-checker"
-						? ACADEMIC_ARTIFACT_KINDS.claimAudit
-						: request.workerType === "method-auditor"
-							? ACADEMIC_ARTIFACT_KINDS.revisionPlan
-							: request.workerType === "reviewer"
-								? ACADEMIC_ARTIFACT_KINDS.reviewCommentMap
-								: request.workerType === "reviser"
-									? ACADEMIC_ARTIFACT_KINDS.revisionPlan
-									: request.workerType === "writer"
-										? ACADEMIC_ARTIFACT_KINDS.outline
-										: ACADEMIC_ARTIFACT_KINDS.evidenceTable,
-			title: `${request.workerType} smoke artifact`,
-			content: `${request.workerType}: ${request.expectedOutputs.join(", ")}`,
-			metadata: {
-				taskId: request.taskId,
-				workerType: request.workerType,
-			},
-		});
+		const artifactRequirements =
+			request.outputContract?.requirements.filter(
+				(requirement): requirement is ArtifactOutputRequirement => requirement.kind === "artifact",
+			) ?? [];
+		const artifacts = artifactRequirements.map((requirement) =>
+			store.create({
+				kind: requirement.artifactKind,
+				title: `${request.workerType} ${requirement.label}`,
+				mediaType: "application/json",
+				content: `${JSON.stringify(
+					{
+						kind: requirement.artifactKind,
+						workerType: request.workerType,
+						expectedOutputs: request.expectedOutputs,
+						objective: request.objective,
+					},
+					null,
+					2,
+				)}\n`,
+				lineage: request.inputArtifacts.map((artifact) => artifact.id),
+				metadata: {
+					taskId: request.taskId,
+					workerType: request.workerType,
+					contractId: request.outputContract?.contractId ?? "",
+					requirementId: requirement.id,
+				},
+			}),
+		);
 		const expectedText = request.expectedOutputs.join("; ");
+		const producedArtifacts = artifacts.map(artifactToRef);
 		return {
 			taskId: request.taskId,
 			status: "success",
@@ -148,24 +160,14 @@ function deterministicWorkerRunner(store: ArtifactStore): LeadAgentWorkerRunner 
 				expectedOutputs: request.expectedOutputs,
 				workerType: request.workerType,
 			},
-			producedArtifacts: [
-				{
-					id: artifact.id,
-					kind: artifact.kind,
-					uri: artifact.uri,
-					title: artifact.title,
-					version: artifact.version,
-				},
-			],
-			artifactBriefs: [
-				{
-					artifactId: artifact.id,
-					kind: artifact.kind,
-					title: artifact.title,
-					brief: `${request.workerType} produced ${expectedText}.`,
-					keyFindings: request.expectedOutputs,
-				},
-			],
+			producedArtifacts,
+			artifactBriefs: producedArtifacts.map((artifact) => ({
+				artifactId: artifact.id,
+				kind: artifact.kind,
+				title: artifact.title,
+				brief: `${request.workerType} produced ${expectedText}.`,
+				keyFindings: request.expectedOutputs,
+			})),
 			warnings: [],
 			openQuestions: [],
 			executionTrace: createExecutionTrace(`academic-smoke-${request.taskId}`),
@@ -197,6 +199,75 @@ function createAcademicSmokePlanner(): WorkflowPlanner {
 						},
 					],
 					stopConditions: ["Literature search plan accepted"],
+				};
+			}
+			if (input.taskId === "citation-check") {
+				return {
+					taskId: input.taskId,
+					sessionId: input.sessionId,
+					objective: input.objective,
+					rationale: "The smoke case needs a citation support audit.",
+					userVisibleSummary: "I will run a citation checker pass and return accepted claim audit outputs.",
+					mode: "workflow",
+					steps: [
+						{
+							id: "citation-check",
+							order: 1,
+							profileId: "citation-checker",
+							objective: `User objective: ${input.objective}\n\nStep objective: Identify citation gaps and unsupported claims.`,
+							inputArtifactRefs: input.inputArtifacts,
+							expectedArtifactKinds: [ACADEMIC_ARTIFACT_KINDS.claimAudit],
+							expectedOutputs: ["citation audit"],
+							acceptanceCriteria: ["Unsupported claims are identified"],
+						},
+					],
+					stopConditions: ["Citation audit accepted"],
+				};
+			}
+			if (input.taskId === "method-audit") {
+				return {
+					taskId: input.taskId,
+					sessionId: input.sessionId,
+					objective: input.objective,
+					rationale: "The smoke case needs methods and reproducibility audit.",
+					userVisibleSummary: "I will run a method auditor pass and return accepted method audit outputs.",
+					mode: "workflow",
+					steps: [
+						{
+							id: "method-audit",
+							order: 1,
+							profileId: "method-auditor",
+							objective: `User objective: ${input.objective}\n\nStep objective: Audit methods and missing-data assumptions.`,
+							inputArtifactRefs: input.inputArtifacts,
+							expectedArtifactKinds: [ACADEMIC_ARTIFACT_KINDS.revisionPlan],
+							expectedOutputs: ["methods audit"],
+							acceptanceCriteria: ["Missing assumptions are explicit"],
+						},
+					],
+					stopConditions: ["Methods audit accepted"],
+				};
+			}
+			if (input.taskId === "review-memo") {
+				return {
+					taskId: input.taskId,
+					sessionId: input.sessionId,
+					objective: input.objective,
+					rationale: "The smoke case needs reviewer-style severity ordering.",
+					userVisibleSummary: "I will run a reviewer pass and return accepted review memo outputs.",
+					mode: "workflow",
+					steps: [
+						{
+							id: "review-memo",
+							order: 1,
+							profileId: "reviewer",
+							objective: `User objective: ${input.objective}\n\nStep objective: Produce severity ordered findings.`,
+							inputArtifactRefs: input.inputArtifacts,
+							expectedArtifactKinds: [ACADEMIC_ARTIFACT_KINDS.reviewCommentMap],
+							expectedOutputs: ["review memo"],
+							acceptanceCriteria: ["Findings are severity ordered"],
+						},
+					],
+					stopConditions: ["Review memo accepted"],
 				};
 			}
 			if (input.taskId !== "mini-paperorchestra-inputs") {
