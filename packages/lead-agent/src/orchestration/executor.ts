@@ -12,6 +12,7 @@ import type {
 import { createExecutionTrace } from "@mariozechner/pi-agent-contracts";
 import type { ArtifactStore } from "@mariozechner/pi-artifact-core";
 import { createLeadAcceptanceReport } from "./acceptance.js";
+import { outputContractForStep } from "./output-contracts.js";
 import type { LeadAgentWorkerRunner } from "./types.js";
 import type { LeadSessionWorkspace } from "./workspace.js";
 
@@ -91,6 +92,9 @@ function workerRequestForStep(
 		inputArtifacts,
 		expectedOutputs: step.expectedOutputs,
 		acceptanceCriteria: step.acceptanceCriteria,
+		outputContract: outputContractForStep(step, profile),
+		legacyExpectedOutputs: step.expectedOutputs,
+		legacyAcceptanceCriteria: step.acceptanceCriteria,
 		executionBudget: step.budget,
 		profile,
 		metadata: {
@@ -202,7 +206,9 @@ export async function executeWorkflowPlan(options: ExecuteWorkflowPlanOptions): 
 				workerResult = createFailedWorkerResult(workerRequest.taskId, plan.sessionId, error);
 			}
 
-			acceptanceReport = createLeadAcceptanceReport(workerRequest, workerResult);
+			acceptanceReport = createLeadAcceptanceReport(workerRequest, workerResult, {
+				artifactStore: options.artifactStore,
+			});
 			if (acceptanceReport.accepted || hasBlockingOpenQuestion(workerResult) || attempt >= maxAttempts) {
 				break;
 			}

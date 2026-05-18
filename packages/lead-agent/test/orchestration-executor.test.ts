@@ -134,7 +134,13 @@ describe("executeWorkflowPlan", () => {
 						status: "success",
 						summary: "citation audit completed",
 						structuredOutputs: { expectedOutputs: request.expectedOutputs },
-						producedArtifacts: [],
+						producedArtifacts: [
+							{
+								id: "claim-audit-artifact",
+								kind: "claim-audit",
+								uri: "memory://claim-audit-artifact",
+							},
+						],
 						warnings: [],
 						openQuestions: [],
 						executionTrace: createExecutionTrace("run-retry-2"),
@@ -252,7 +258,13 @@ describe("executeWorkflowPlan", () => {
 						status: "success",
 						summary: "draft text completed",
 						structuredOutputs: { expectedOutputs: request.expectedOutputs },
-						producedArtifacts: [],
+						producedArtifacts: [
+							{
+								id: "draft-text-artifact",
+								kind: "draft-text",
+								uri: "memory://draft-text-artifact",
+							},
+						],
 						warnings: [],
 						openQuestions: [],
 						executionTrace: createExecutionTrace("run-retrieval"),
