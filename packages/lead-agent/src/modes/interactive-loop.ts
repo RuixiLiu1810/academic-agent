@@ -1,7 +1,7 @@
 import { stdin as processStdin, stdout as processStdout } from "node:process";
 import { createInterface } from "node:readline/promises";
 import { createLeadAgentRunView, renderLeadAgentMarkdown } from "../cli/output.js";
-import type { AcademicTaskType, LeadAgentRuntime } from "../index.js";
+import type { AcademicTaskType, LeadAgentModel, LeadAgentRuntime, ThinkingLevel } from "../index.js";
 
 export interface RunLeadInteractiveLoopOptions {
 	runtime: LeadAgentRuntime;
@@ -11,12 +11,16 @@ export interface RunLeadInteractiveLoopOptions {
 	defaultTaskType?: AcademicTaskType;
 	defaultProfileId?: string;
 	defaultExpectedOutputs?: string[];
+	model?: LeadAgentModel;
+	thinkingLevel?: ThinkingLevel;
 }
 
 interface InteractiveState {
 	taskType?: AcademicTaskType;
 	profileId?: string;
 	expectedOutputs: string[];
+	model?: LeadAgentModel;
+	thinkingLevel?: ThinkingLevel;
 }
 
 function parseAcademicTaskType(value: string): AcademicTaskType | undefined {
@@ -33,11 +37,23 @@ function parseAcademicTaskType(value: string): AcademicTaskType | undefined {
 	return undefined;
 }
 
+function renderSettings(state: InteractiveState, sessionId: string): string {
+	return [
+		`settings:`,
+		`session:          ${sessionId}`,
+		`task-type:        ${state.taskType ?? "auto"}`,
+		`profile:          ${state.profileId ?? "auto"}`,
+		`expected-outputs: ${state.expectedOutputs.length > 0 ? state.expectedOutputs.join(", ") : "none"}`,
+		`model:            ${state.model ? `${state.model.provider}/${state.model.id}` : "default"}`,
+		`thinking:         ${state.thinkingLevel ?? "default"}`,
+	].join("\n");
+}
+
 function handleCommand(line: string, state: InteractiveState, stdout: (text: string) => void): boolean {
 	const [command, ...parts] = line.slice(1).trim().split(/\s+/);
 	const value = parts.join(" ").trim();
 	if (command === "help") {
-		stdout("/task-type <type>\n/profile <id>\n/expected-output <text>\n/session\n/exit\n");
+		stdout("/settings\n/task-type <type>\n/profile <id>\n/expected-output <text>\n/session\n/exit\n");
 		return true;
 	}
 	if (command === "task-type") {
@@ -89,6 +105,8 @@ export async function runLeadInteractiveLoop(options: RunLeadInteractiveLoopOpti
 		taskType: options.defaultTaskType,
 		profileId: options.defaultProfileId,
 		expectedOutputs: options.defaultExpectedOutputs ?? [],
+		model: options.model,
+		thinkingLevel: options.thinkingLevel,
 	};
 	const inputs = await collectInputs(options);
 	for (const rawLine of inputs) {
@@ -101,6 +119,10 @@ export async function runLeadInteractiveLoop(options: RunLeadInteractiveLoopOpti
 			return 0;
 		}
 		if (line.startsWith("/")) {
+			if (line === "/settings" || line === "/setting") {
+				stdout(`${renderSettings(state, options.runtime.sessionManager.getSessionId())}\n`);
+				continue;
+			}
 			const handled = handleCommand(line, state, stdout);
 			if (!handled && line === "/session") {
 				stdout(`session: ${options.runtime.sessionManager.getSessionId()}\n`);

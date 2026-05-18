@@ -59,4 +59,37 @@ describe("runLeadInteractiveLoop", () => {
 		expect(stdout.join("")).toContain("task-type: citation");
 		expect(stdout.join("")).toContain("citation-checker: citation audit");
 	});
+
+	it("prints current settings through slash command", async () => {
+		const stdout: string[] = [];
+		const runtime = createLeadAgentRuntime({
+			workerRunner: async (request) => ({
+				taskId: request.taskId,
+				status: "success",
+				summary: "unused",
+				structuredOutputs: {},
+				producedArtifacts: [],
+				warnings: [],
+				openQuestions: [],
+				executionTrace: createExecutionTrace("run-interactive-settings"),
+			}),
+		});
+
+		const exitCode = await runLeadInteractiveLoop({
+			runtime,
+			inputs: ["/settings", "/exit"],
+			stdout: (text) => stdout.push(text),
+			stderr: () => {},
+			defaultExpectedOutputs: ["evidence-table"],
+			defaultTaskType: "research",
+			defaultProfileId: "researcher",
+		});
+
+		const output = stdout.join("");
+		expect(exitCode).toBe(0);
+		expect(output).toContain("settings:");
+		expect(output).toContain("task-type:        research");
+		expect(output).toContain("profile:          researcher");
+		expect(output).toContain("expected-outputs: evidence-table");
+	});
 });

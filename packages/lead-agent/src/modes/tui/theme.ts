@@ -1,4 +1,4 @@
-import type { EditorTheme, MarkdownTheme, SelectListTheme } from "@mariozechner/pi-tui";
+import type { EditorTheme, MarkdownTheme, SelectListTheme, SettingsListTheme } from "@mariozechner/pi-tui";
 import { Chalk } from "chalk";
 
 const chalk = new Chalk({ level: 3 });
@@ -39,6 +39,20 @@ export function createLeadEditorTheme(theme: LeadTuiTheme): EditorTheme {
 	return {
 		borderColor: theme.border,
 		selectList: selectListTheme,
+	};
+}
+
+export function createLeadSelectListTheme(): SelectListTheme {
+	return selectListTheme;
+}
+
+export function createLeadSettingsListTheme(theme: LeadTuiTheme): SettingsListTheme {
+	return {
+		label: (text, selected) => (selected ? theme.accent(text) : text),
+		value: (text, selected) => (selected ? theme.accent(text) : theme.muted(text)),
+		description: (text) => theme.dim(text),
+		cursor: theme.accent("-> "),
+		hint: (text) => theme.dim(text),
 	};
 }
 

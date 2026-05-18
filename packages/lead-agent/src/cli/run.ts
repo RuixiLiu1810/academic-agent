@@ -180,7 +180,7 @@ export async function runLeadAgentCli(argv: string[], io: LeadAgentCliIo = {}): 
 		return 0;
 	}
 
-	// Resolve model from --model / --provider flags
+	// Resolve model from --model / --provider flags, falling back to agent-host defaults.
 	let resolvedModel: LeadAgentModel | undefined;
 	if (args.model !== undefined || args.provider !== undefined) {
 		resolvedModel = resolveModel(modelRegistry, args.model, args.provider);
@@ -189,7 +189,14 @@ export async function runLeadAgentCli(argv: string[], io: LeadAgentCliIo = {}): 
 			stderr(`No model found matching "${pattern}". Use --list-models to see available models.\n`);
 			return 1;
 		}
+	} else {
+		resolvedModel = resolveModel(
+			modelRegistry,
+			services.settingsManager.getDefaultModel(),
+			services.settingsManager.getDefaultProvider(),
+		);
 	}
+	const resolvedThinkingLevel = args.thinking ?? services.settingsManager.getDefaultThinkingLevel();
 
 	// Resolve tool configuration
 	let toolsArg: string[] | undefined;
@@ -222,7 +229,7 @@ export async function runLeadAgentCli(argv: string[], io: LeadAgentCliIo = {}): 
 		artifactDir: args.artifactDir,
 		confirmPlan: args.confirmPlan,
 		model: resolvedModel,
-		thinkingLevel: args.thinking,
+		thinkingLevel: resolvedThinkingLevel,
 		tools: toolsArg,
 		noTools: noToolsArg,
 	});
@@ -233,7 +240,8 @@ export async function runLeadAgentCli(argv: string[], io: LeadAgentCliIo = {}): 
 				initialPrompt: args.objectiveParts.join(" ").trim() || undefined,
 				modelRegistry,
 				initialModel: resolvedModel,
-				initialThinkingLevel: args.thinking,
+				initialThinkingLevel: resolvedThinkingLevel,
+				settingsManager: services.settingsManager,
 				verbose: args.verbose,
 			});
 		}
@@ -245,6 +253,8 @@ export async function runLeadAgentCli(argv: string[], io: LeadAgentCliIo = {}): 
 			defaultTaskType: toTaskType(args.taskType),
 			defaultProfileId: args.profileId,
 			defaultExpectedOutputs: args.expectedOutputs,
+			model: resolvedModel,
+			thinkingLevel: resolvedThinkingLevel,
 		});
 	}
 	const objective = readObjective(args.objectiveParts, io.stdin);
@@ -254,7 +264,8 @@ export async function runLeadAgentCli(argv: string[], io: LeadAgentCliIo = {}): 
 				runtime,
 				modelRegistry,
 				initialModel: resolvedModel,
-				initialThinkingLevel: args.thinking,
+				initialThinkingLevel: resolvedThinkingLevel,
+				settingsManager: services.settingsManager,
 				verbose: args.verbose,
 			});
 		}

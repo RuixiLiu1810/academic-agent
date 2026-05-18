@@ -1,4 +1,4 @@
-import type { ModelRegistry } from "@mariozechner/pi-agent-host";
+import type { ModelRegistry, SettingsManager } from "@mariozechner/pi-agent-host";
 import type { SelectListTheme } from "@mariozechner/pi-tui";
 import {
 	CancellableLoader,
@@ -29,6 +29,7 @@ import {
 	StreamingAssistantMessageComponent,
 	UserQueryComponent,
 } from "./components/messages.js";
+import { LeadSettingsSelectorComponent } from "./components/settings-selector.js";
 import { DEFAULT_LEAD_TUI_KEYBINDINGS, type LeadTuiAction } from "./keybindings.js";
 import { createLeadEditorTheme, createLeadMarkdownTheme, createLeadTuiTheme, type LeadTuiTheme } from "./theme.js";
 
@@ -84,6 +85,8 @@ export interface RunLeadTuiModeOptions {
 	initialModel?: LeadAgentModel;
 	/** Initially selected thinking level (from --thinking CLI flag). */
 	initialThinkingLevel?: ThinkingLevel;
+	/** Shared agent-host settings manager for persisted lead-agent settings. */
+	settingsManager?: SettingsManager;
 	/** Show expanded header on startup (passed from --verbose flag). */
 	verbose?: boolean;
 }
@@ -102,6 +105,30 @@ function parseTuiAcademicTaskType(value: string): AcademicTaskType | undefined {
 	return undefined;
 }
 
+function setLeadTuiModel(
+	model: LeadAgentModel,
+	state: LeadTuiState,
+	footer: FooterComponent,
+	options: RunLeadTuiModeOptions,
+): void {
+	state.model = model;
+	options.runtime.setModel(model, state.thinkingLevel);
+	options.settingsManager?.setDefaultModelAndProvider(model.provider, model.id);
+	footer.sync(state);
+}
+
+function setLeadTuiThinkingLevel(
+	level: ThinkingLevel,
+	state: LeadTuiState,
+	footer: FooterComponent,
+	options: RunLeadTuiModeOptions,
+): void {
+	state.thinkingLevel = level;
+	options.runtime.setModel(state.model, level);
+	options.settingsManager?.setDefaultThinkingLevel(level);
+	footer.sync(state);
+}
+
 function handleTuiSlashCommand(
 	text: string,
 	state: LeadTuiState,
@@ -110,6 +137,7 @@ function handleTuiSlashCommand(
 	chatContainer: Container,
 	options: RunLeadTuiModeOptions,
 	tui: TUI,
+	editor: Editor,
 ): void {
 	const [cmd, ...parts] = text.slice(1).trim().split(/\s+/);
 	const value = parts.join(" ").trim();
@@ -146,6 +174,53 @@ function handleTuiSlashCommand(
 				`thinking:         ${state.thinkingLevel ?? "(default)"}`,
 			].join("\n");
 			chatContainer.addChild(new Text(theme.dim(lines), 1, 0));
+			break;
+		}
+		case "setting":
+		case "settings": {
+			const selector = new LeadSettingsSelectorComponent(
+				{
+					taskType: state.taskType,
+					profileId: state.profileId,
+					expectedOutputs: state.expectedOutputs,
+					model: state.model,
+					availableModels: options.modelRegistry?.getAvailable() ?? [],
+					thinkingLevel: state.thinkingLevel,
+				},
+				{
+					onTaskTypeChange: (taskType) => {
+						state.taskType = taskType;
+						footer.sync(state);
+						tui.requestRender();
+					},
+					onProfileChange: (profileId) => {
+						state.profileId = profileId;
+						footer.sync(state);
+						tui.requestRender();
+					},
+					onExpectedOutputsChange: (expectedOutputs) => {
+						state.expectedOutputs = expectedOutputs;
+						footer.sync(state);
+						tui.requestRender();
+					},
+					onModelChange: (model) => {
+						setLeadTuiModel(model, state, footer, options);
+						tui.requestRender();
+					},
+					onThinkingLevelChange: (level) => {
+						setLeadTuiThinkingLevel(level, state, footer, options);
+						tui.requestRender();
+					},
+					onCancel: () => {
+						chatContainer.removeChild(selector);
+						tui.setFocus(editor);
+						tui.requestRender();
+					},
+				},
+				theme,
+			);
+			chatContainer.addChild(selector);
+			tui.setFocus(selector);
 			break;
 		}
 		case "hotkeys": {
@@ -199,9 +274,7 @@ function handleTuiSlashCommand(
 					list.onSelect = (item) => {
 						const found = available.find((m) => `${m.provider}/${m.id}` === item.value);
 						if (found) {
-							state.model = found;
-							options.runtime.setModel(found, state.thinkingLevel);
-							footer.sync(state);
+							setLeadTuiModel(found, state, footer, options);
 						}
 						overlayHandle.hide();
 						tui.requestRender();
@@ -222,9 +295,7 @@ function handleTuiSlashCommand(
 						m.id.toLowerCase().includes(lower),
 				);
 				if (found) {
-					state.model = found;
-					options.runtime.setModel(found, state.thinkingLevel);
-					footer.sync(state);
+					setLeadTuiModel(found, state, footer, options);
 				} else {
 					footer.setText(theme.error(`No model found matching "${value}". Use /model to list available models.`));
 				}
@@ -241,9 +312,7 @@ function handleTuiSlashCommand(
 				level === "high" ||
 				level === "xhigh"
 			) {
-				state.thinkingLevel = level as ThinkingLevel;
-				options.runtime.setModel(state.model, state.thinkingLevel);
-				footer.sync(state);
+				setLeadTuiThinkingLevel(level as ThinkingLevel, state, footer, options);
 			} else if (!level) {
 				footer.setText(
 					theme.dim(
@@ -258,7 +327,7 @@ function handleTuiSlashCommand(
 		case "help":
 			footer.setText(
 				theme.dim(
-					"/task-type · /profile · /expected-output · /model · /thinking · /session · /hotkeys · /new · /help",
+					"/settings · /task-type · /profile · /expected-output · /model · /thinking · /session · /hotkeys · /new · /help",
 				),
 			);
 			break;
@@ -322,7 +391,7 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 
 		// Slash commands
 		if (text.startsWith("/")) {
-			handleTuiSlashCommand(text, state, footer, theme, chatContainer, options, tui);
+			handleTuiSlashCommand(text, state, footer, theme, chatContainer, options, tui, editor);
 			editor.setText("");
 			tui.requestRender();
 			return;
@@ -459,9 +528,7 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 					currentModelIndex = (currentModelIndex + 1) % availableModels.length;
 					const selected = availableModels[currentModelIndex];
 					if (selected) {
-						state.model = selected;
-						options.runtime.setModel(selected, state.thinkingLevel);
-						footer.sync(state);
+						setLeadTuiModel(selected, state, footer, options);
 						tui.requestRender();
 					}
 				}
