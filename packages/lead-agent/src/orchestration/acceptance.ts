@@ -8,6 +8,11 @@ import type {
 	WorkerResult,
 } from "@mariozechner/pi-agent-contracts";
 import { createAcceptanceReport } from "@mariozechner/pi-agent-contracts";
+import type { ArtifactStore } from "@mariozechner/pi-artifact-core";
+
+export { createLeadContractAcceptanceReport, outputContractForRequest } from "./contract-acceptance.js";
+
+import { createLeadContractAcceptanceReport } from "./contract-acceptance.js";
 
 function normalizeForMatch(value: string): string {
 	return value.trim().toLowerCase();
@@ -134,6 +139,13 @@ export function acceptanceIssuesForWorkerResult(
 	return issues;
 }
 
-export function createLeadAcceptanceReport(workerRequest: WorkerRequest, workerResult: WorkerResult): AcceptanceReport {
+export function createLeadAcceptanceReport(
+	workerRequest: WorkerRequest,
+	workerResult: WorkerResult,
+	options: { artifactStore?: Pick<ArtifactStore, "get"> } = {},
+): AcceptanceReport {
+	if (workerRequest.outputContract) {
+		return createLeadContractAcceptanceReport(workerRequest, workerResult, options);
+	}
 	return createAcceptanceReport(workerResult, acceptanceIssuesForWorkerResult(workerRequest, workerResult));
 }
