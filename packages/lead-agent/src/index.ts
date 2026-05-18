@@ -40,7 +40,9 @@ import {
 	type WorkflowPlanner,
 } from "./orchestration/index.js";
 import { buildLeadDirectMessage, LEAD_AGENT_SYSTEM_PROMPT } from "./prompts.js";
+import { createProfileWorkerDispatcher } from "./workers/profile-worker-dispatcher.js";
 import { createProfileWorkerRunner } from "./workers/profile-worker-runner.js";
+import { createStructuredProfileRunner } from "./workers/structured-profile-runner.js";
 
 export type AcademicTaskType = "writing" | "research" | "review" | "revision" | "methods" | "citation";
 export type LeadAgentDispatchMode = "auto" | "direct" | "worker";
@@ -761,10 +763,17 @@ function createDefaultWorkflowWorkerRunner(
 		],
 	});
 	const literatureToolDefinition = literatureTool as unknown as ToolDefinition;
-	return createProfileWorkerRunner({
+	const literatureRunner = createProfileWorkerRunner({
 		cwd,
 		store: workspace.store,
 		toolDefinitions: [literatureToolDefinition],
+	});
+	const structuredRunner = createStructuredProfileRunner({
+		store: workspace.store,
+	});
+	return createProfileWorkerDispatcher({
+		literatureRunner,
+		structuredRunner,
 	});
 }
 
