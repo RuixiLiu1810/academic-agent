@@ -4,7 +4,13 @@ export interface WorkflowTemplateSummary {
 	id: string;
 	title: string;
 	description: string;
-	steps: { profileId: string; role: string }[];
+	steps: {
+		profileId: string;
+		role: string;
+		expectedArtifactKinds: string[];
+		expectedOutputs: string[];
+		acceptanceCriteria: string[];
+	}[];
 }
 
 export const WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
@@ -171,6 +177,9 @@ export function summarizeWorkflowTemplatesForPlanner(templates: WorkflowTemplate
 		steps: template.steps.map((step) => ({
 			profileId: step.profileId,
 			role: step.objective,
+			expectedArtifactKinds: step.expectedArtifactKinds,
+			expectedOutputs: step.expectedOutputs,
+			acceptanceCriteria: step.acceptanceCriteria,
 		})),
 	}));
 }

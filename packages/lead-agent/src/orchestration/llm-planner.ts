@@ -90,6 +90,10 @@ function formatArtifacts(artifacts: ArtifactRef[]): string {
 	return artifacts.map((a) => `- ${a.id} (${a.kind})`).join("\n");
 }
 
+function formatList(values: readonly string[]): string {
+	return values.length > 0 ? values.join(", ") : "none";
+}
+
 function buildUserMessage(input: LeadTaskPlanningInput, config: LlmWorkflowPlannerConfig): string {
 	const profileLines = config.profiles.map((p) => `- ${p.id}: ${p.description}`).join("\n");
 	const templateSummaries = summarizeWorkflowTemplatesForPlanner(config.templates);
@@ -98,7 +102,15 @@ function buildUserMessage(input: LeadTaskPlanningInput, config: LlmWorkflowPlann
 			const stepLines =
 				t.steps.length === 0
 					? "  (no steps — lead agent handles directly)"
-					: t.steps.map((s) => `  - ${s.profileId}: ${s.role}`).join("\n");
+					: t.steps
+							.map(
+								(s) =>
+									`  - ${s.profileId}: ${s.role}\n` +
+									`    required artifacts: ${formatList(s.expectedArtifactKinds)}\n` +
+									`    expected outputs: ${formatList(s.expectedOutputs)}\n` +
+									`    acceptance criteria: ${formatList(s.acceptanceCriteria)}`,
+							)
+							.join("\n");
 			return `${t.id}: ${t.description}\n${stepLines}`;
 		})
 		.join("\n\n");

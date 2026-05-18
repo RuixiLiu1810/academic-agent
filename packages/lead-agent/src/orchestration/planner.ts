@@ -1,6 +1,24 @@
 import type { WorkflowPlan } from "@mariozechner/pi-agent-contracts";
 import type { LeadTaskPlanningInput, PlannerValidationContext, WorkflowPlanner } from "./types.js";
 
+function templateArtifactKindsForProfile(
+	context: PlannerValidationContext,
+	profileId: string,
+): Set<string> | undefined {
+	const kinds = new Set<string>();
+	for (const template of context.templates) {
+		for (const step of template.steps) {
+			if (step.profileId !== profileId) {
+				continue;
+			}
+			for (const artifactKind of step.expectedArtifactKinds) {
+				kinds.add(artifactKind);
+			}
+		}
+	}
+	return kinds.size > 0 ? kinds : undefined;
+}
+
 export function validateWorkflowPlan(plan: unknown, context: PlannerValidationContext): string[] {
 	const errors: string[] = [];
 
@@ -95,6 +113,17 @@ export function validateWorkflowPlan(plan: unknown, context: PlannerValidationCo
 			!(s.expectedArtifactKinds as unknown[]).every((k) => typeof k === "string")
 		) {
 			errors.push(`Step ${stepId}: expectedArtifactKinds must be an array of strings`);
+		} else if (typeof s.profileId === "string") {
+			const allowedArtifactKinds = templateArtifactKindsForProfile(context, s.profileId);
+			if (allowedArtifactKinds) {
+				for (const artifactKind of s.expectedArtifactKinds as string[]) {
+					if (!allowedArtifactKinds.has(artifactKind)) {
+						errors.push(
+							`Step ${stepId}: expectedArtifactKind ${artifactKind} is not compatible with profile ${s.profileId}`,
+						);
+					}
+				}
+			}
 		}
 
 		if (!Array.isArray(s.expectedOutputs) || !(s.expectedOutputs as unknown[]).every((o) => typeof o === "string")) {

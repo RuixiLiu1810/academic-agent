@@ -70,6 +70,34 @@ describe("createLlmWorkflowPlanner", () => {
 		expect(result.steps[0]?.profileId).toBe("researcher");
 	});
 
+	it("includes template artifact and output requirements in the planner prompt", async () => {
+		const { faux, planner } = makePlanner();
+		let prompt = "";
+		faux.setResponses([
+			(context) => {
+				const firstMessage = context.messages[0];
+				const firstBlock =
+					firstMessage?.role === "user" && Array.isArray(firstMessage.content)
+						? firstMessage.content[0]
+						: undefined;
+				if (firstBlock?.type === "text") {
+					prompt = firstBlock.text;
+				}
+				return fauxAssistantMessage(fauxToolCall("submit_workflow_plan", { plan: validPlan }), {
+					stopReason: "toolUse",
+				});
+			},
+		]);
+
+		await planner.plan(baseInput);
+
+		expect(prompt).toContain("required artifacts: literature-search-results");
+		expect(prompt).toContain(
+			"expected outputs: search strategy, query plan, bibliography candidates, retrieval gaps",
+		);
+		expect(prompt).toContain("acceptance criteria: Candidate bibliography is separated from verified evidence");
+	});
+
 	it("retries with repair context when the first call does not emit a tool call", async () => {
 		const { faux, planner } = makePlanner();
 		faux.setResponses([

@@ -2,7 +2,7 @@ import type { WorkflowPlan } from "@mariozechner/pi-agent-contracts";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ACADEMIC_PROFILES } from "../src/index.js";
 import { createFauxWorkflowPlanner, validateWorkflowPlan } from "../src/orchestration/planner.js";
-import { WORKFLOW_TEMPLATES } from "../src/orchestration/templates.js";
+import { summarizeWorkflowTemplatesForPlanner, WORKFLOW_TEMPLATES } from "../src/orchestration/templates.js";
 
 function ctx(overrides: Partial<Parameters<typeof validateWorkflowPlan>[1]> = {}) {
 	return {
@@ -39,6 +39,8 @@ describe("validateWorkflowPlan", () => {
 	it("defines the full template inventory", () => {
 		expect(WORKFLOW_TEMPLATES.map((t) => t.id)).toEqual([
 			"direct-writing",
+			"literature-search",
+			"literature-to-evidence",
 			"citation-audit",
 			"method-audit",
 			"review-memo",
@@ -46,6 +48,18 @@ describe("validateWorkflowPlan", () => {
 			"evidence-synthesis",
 			"outline-to-draft",
 		]);
+	});
+
+	it("exposes template output contracts to the planner summary", () => {
+		const summary = summarizeWorkflowTemplatesForPlanner(WORKFLOW_TEMPLATES);
+		const literatureSearch = summary.find((template) => template.id === "literature-search");
+
+		expect(literatureSearch?.steps[0]).toMatchObject({
+			profileId: "literature-searcher",
+			expectedArtifactKinds: ["literature-search-results"],
+			expectedOutputs: ["search strategy", "query plan", "bibliography candidates", "retrieval gaps"],
+			acceptanceCriteria: ["Candidate bibliography is separated from verified evidence"],
+		});
 	});
 
 	it("accepts a valid direct plan", () => {
@@ -140,6 +154,25 @@ describe("validateWorkflowPlan", () => {
 				ctx({ inputArtifacts: [artifact] }),
 			),
 		).toEqual([]);
+	});
+
+	it("rejects artifact requirements incompatible with the selected profile", () => {
+		expect(
+			validateWorkflowPlan(
+				{
+					...validDirectPlan,
+					mode: "workflow",
+					steps: [
+						{
+							...validStep,
+							profileId: "researcher",
+							expectedArtifactKinds: ["claim-audit"],
+						},
+					],
+				},
+				ctx({ profiles: DEFAULT_ACADEMIC_PROFILES.filter((profile) => profile.id !== "citation-checker") }),
+			),
+		).toContain("Step step-1: expectedArtifactKind claim-audit is not compatible with profile researcher");
 	});
 });
 
