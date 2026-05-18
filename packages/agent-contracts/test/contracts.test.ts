@@ -143,6 +143,44 @@ describe("agent contracts", () => {
 		expect(isWorkerRequest(parsed)).toBe(true);
 	});
 
+	it("round-trips output-contract worker requests", () => {
+		const request: WorkerRequest = {
+			taskId: "task-output-contract",
+			workerType: "researcher",
+			objective: "Create an evidence table.",
+			constraints: [],
+			inputArtifacts: [],
+			expectedOutputs: ["evidence-table"],
+			acceptanceCriteria: ["Evidence is separated from interpretation"],
+			outputContract: {
+				contractId: "contract-evidence-table",
+				profileId: "researcher",
+				successMode: "all-required",
+				requirements: [
+					{
+						kind: "artifact",
+						id: "evidence-table",
+						label: "Evidence table",
+						required: true,
+						artifactKind: "evidence-table",
+						minCount: 1,
+						schemaRef: {
+							id: "evidence-table-artifact",
+							version: "v1",
+						},
+					},
+				],
+			},
+			legacyExpectedOutputs: ["evidence-table"],
+			legacyAcceptanceCriteria: ["Evidence is separated from interpretation"],
+		};
+
+		const parsed = deserializeWorkerRequest(serializeContract(request));
+
+		expect(parsed).toEqual(request);
+		expect(isWorkerRequest(parsed)).toBe(true);
+	});
+
 	it("round-trips worker results through JSON serialization", () => {
 		const result: WorkerResult = {
 			taskId: "task-roundtrip",

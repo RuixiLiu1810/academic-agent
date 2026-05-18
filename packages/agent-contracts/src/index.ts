@@ -1,3 +1,12 @@
+import {
+	type ExpectedWorkerOutput,
+	isExpectedWorkerOutput,
+	isWorkerAttemptContext,
+	type WorkerAttemptContext,
+} from "./output-contracts.js";
+
+export * from "./output-contracts.js";
+
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
@@ -89,6 +98,10 @@ export interface WorkerRequest {
 	inputArtifacts: ArtifactRef[];
 	expectedOutputs: string[];
 	acceptanceCriteria: string[];
+	outputContract?: ExpectedWorkerOutput;
+	attemptContext?: WorkerAttemptContext;
+	legacyExpectedOutputs?: string[];
+	legacyAcceptanceCriteria?: string[];
 	executionBudget?: WorkerBudget;
 	retryPolicy?: WorkerRetryPolicy;
 	profile?: WorkerProfile;
@@ -333,6 +346,10 @@ export const WorkerRequestSchema: JsonObject = {
 		inputArtifacts: { type: "array", items: ArtifactRefSchema },
 		expectedOutputs: stringArraySchema,
 		acceptanceCriteria: stringArraySchema,
+		outputContract: jsonObjectSchema,
+		attemptContext: jsonObjectSchema,
+		legacyExpectedOutputs: stringArraySchema,
+		legacyAcceptanceCriteria: stringArraySchema,
 		executionBudget: jsonObjectSchema,
 		retryPolicy: jsonObjectSchema,
 		profile: WorkerProfileSchema,
@@ -662,6 +679,10 @@ export function isWorkerRequest(value: unknown): value is WorkerRequest {
 		isArtifactRefArray(value.inputArtifacts) &&
 		isStringArray(value.expectedOutputs) &&
 		isStringArray(value.acceptanceCriteria) &&
+		(value.outputContract === undefined || isExpectedWorkerOutput(value.outputContract)) &&
+		(value.attemptContext === undefined || isWorkerAttemptContext(value.attemptContext)) &&
+		hasOptionalStringArray(value, "legacyExpectedOutputs") &&
+		hasOptionalStringArray(value, "legacyAcceptanceCriteria") &&
 		(value.executionBudget === undefined || isWorkerBudget(value.executionBudget)) &&
 		(value.retryPolicy === undefined || isWorkerRetryPolicy(value.retryPolicy)) &&
 		(value.profile === undefined || isWorkerProfile(value.profile)) &&
