@@ -6,6 +6,7 @@ import {
 	ACADEMIC_ARTIFACT_KINDS,
 	artifactToRef,
 	createAcademicArtifact,
+	createTypedArtifactWriter,
 	FileSystemArtifactStore,
 	MemoryArtifactStore,
 	resolveArtifactLineage,
@@ -57,6 +58,33 @@ describe("artifact stores", () => {
 		});
 		expect(resolveArtifactLineage(store, audit.id).map((artifact) => artifact.id)).toEqual([evidence.id]);
 		expect(store.manifest().artifacts.map((artifact) => artifact.kind)).toEqual(["evidence-table", "claim-audit"]);
+	});
+
+	it("writes typed academic artifact payloads as JSON", () => {
+		const store = new MemoryArtifactStore();
+		const writer = createTypedArtifactWriter(store);
+		const artifact = writer.write({
+			kind: "evidence-table",
+			title: "Evidence table",
+			payload: {
+				kind: "evidence-table",
+				rows: [
+					{
+						claimId: "claim-1",
+						claim: "NIR spectroscopy is used for non-destructive analysis.",
+						support: "supported",
+						sourceArtifactIds: ["source-1"],
+					},
+				],
+				uncertaintySummary: "Representative evidence only.",
+			},
+		});
+
+		expect(artifact.mediaType).toBe("application/json");
+		expect(JSON.parse(artifact.content)).toMatchObject({
+			kind: "evidence-table",
+			rows: [{ claimId: "claim-1" }],
+		});
 	});
 
 	it("persists file-system artifact metadata", () => {
@@ -151,6 +179,9 @@ describe("artifact stores", () => {
 			"review-comment-map",
 			"revision-plan",
 			"response-letter-draft",
+			"literature-search-results",
+			"bibliography-candidates",
+			"search-strategy",
 		]);
 	});
 });

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { extname, join } from "node:path";
-import type { ArtifactManifest, ArtifactRef, JsonObject } from "@mariozechner/pi-agent-contracts";
+import type { ArtifactManifest, ArtifactRef, JsonObject, TypedArtifactPayload } from "@mariozechner/pi-agent-contracts";
 
 export const ACADEMIC_ARTIFACT_KINDS = {
 	evidenceTable: "evidence-table",
@@ -80,6 +80,31 @@ export function artifactToRef(artifact: StoredArtifact): ArtifactRef {
 
 export function createAcademicArtifact(store: ArtifactStore, input: CreateAcademicArtifactInput): StoredArtifact {
 	return store.create(input);
+}
+
+export interface TypedArtifactWriter {
+	write<K extends TypedArtifactPayload["kind"]>(input: {
+		kind: K;
+		title: string;
+		payload: Extract<TypedArtifactPayload, { kind: K }>;
+		lineage?: string[];
+		metadata?: JsonObject;
+	}): StoredArtifact;
+}
+
+export function createTypedArtifactWriter(store: ArtifactStore): TypedArtifactWriter {
+	return {
+		write(input) {
+			return store.create({
+				kind: input.kind,
+				title: input.title,
+				mediaType: "application/json",
+				lineage: input.lineage,
+				metadata: input.metadata,
+				content: `${JSON.stringify(input.payload, null, 2)}\n`,
+			});
+		},
+	};
 }
 
 export function resolveArtifactLineage(store: ArtifactStore, artifactId: string): StoredArtifact[] {
