@@ -515,6 +515,10 @@ function createDirectWorkflowPlan(taskId: string, sessionId: string, request: Le
 	};
 }
 
+function expectedArtifactKindsForFallback(request: LeadAgentTaskRequest): string[] {
+	return request.expectedOutputs?.filter((output) => output.endsWith("-table") || output.endsWith("-audit")) ?? [];
+}
+
 function createSingleStepWorkflowPlan(
 	taskId: string,
 	sessionId: string,
@@ -538,7 +542,7 @@ function createSingleStepWorkflowPlan(
 				profileId,
 				objective: request.objective,
 				inputArtifactRefs: request.inputArtifacts ?? [],
-				expectedArtifactKinds: profile?.expectedOutputs ?? ["worker-summary"],
+				expectedArtifactKinds: expectedArtifactKindsForFallback(request),
 				expectedOutputs: request.expectedOutputs ?? profile?.expectedOutputs ?? ["worker summary"],
 				acceptanceCriteria: request.acceptanceCriteria ?? profile?.acceptanceChecklist ?? [],
 			},

@@ -22,6 +22,7 @@ export function outputContractForStep(step: WorkflowStep, profile: WorkerProfile
 			label,
 			required: true,
 			section: label,
+			mustMention: [label],
 		}));
 	return {
 		contractId: `step:${step.profileId}:${step.id}`,

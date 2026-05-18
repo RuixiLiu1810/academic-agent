@@ -287,10 +287,10 @@ Use the custom audit role.
 				structuredOutputs: { expectedOutputs: request.expectedOutputs },
 				producedArtifacts: [
 					{
-						id: "nir-literature-search",
-						kind: "literature-search-results",
-						uri: "memory://nir-literature-search",
-						title: "NIR candidate bibliography",
+						id: "review-comment-map",
+						kind: "review-comment-map",
+						uri: "memory://review-comment-map",
+						title: "Review comment map",
 					},
 				],
 				warnings: [],
@@ -448,12 +448,19 @@ Use the custom audit role.
 			workerRunner: async (request) => ({
 				taskId: request.taskId,
 				status: "success",
-				summary: "Located representative peer-reviewed sources on NIR.",
+				summary: "Located representative peer-reviewed sources on NIR with uncertainty notes.",
 				structuredOutputs: {
 					evidenceTable: [{ title: "Near-infrared spectroscopy review" }],
 					rawAssistantText: "## Evidence Table\n\nFive NIR sources.\n\n## Uncertainty Notes\n\nDomain is broad.",
 				},
-				producedArtifacts: [],
+				producedArtifacts: [
+					{
+						id: "evidence-table",
+						kind: "evidence-table",
+						uri: "memory://evidence-table",
+						title: "Evidence table",
+					},
+				],
 				warnings: [],
 				openQuestions: [{ question: "Which NIR application should be prioritized?" }],
 				executionTrace: createExecutionTrace("run-nir"),
@@ -516,7 +523,8 @@ Use the custom audit role.
 			workerRunner: async (request) => ({
 				taskId: request.taskId,
 				status: "success",
-				summary: "Offline structured literature search plan completed for NIR.",
+				summary:
+					"Offline structured literature search plan completed for NIR with search strategy, bibliography candidates, and retrieval gaps.",
 				structuredOutputs: {
 					"search strategy": {
 						retrievalMode: "offline-structured",
@@ -647,7 +655,13 @@ Use the custom audit role.
 						"evidence-table": [{ topic: "NIR spectroscopy" }],
 						"uncertainty notes": ["Search candidates require database verification."],
 					},
-					producedArtifacts: [],
+					producedArtifacts: [
+						{
+							id: "evidence-table",
+							kind: "evidence-table",
+							uri: "memory://evidence-table",
+						},
+					],
 					warnings: [],
 					openQuestions: [],
 					executionTrace: createExecutionTrace("run-researcher"),
@@ -689,8 +703,8 @@ Use the custom audit role.
 		expect(result.decision.mode).toBe("worker");
 		expect(result.acceptanceReport?.accepted).toBe(false);
 		expect(result.acceptanceReport?.issues).toContainEqual({
-			code: "expected_output_missing",
-			message: "Worker result did not satisfy expected output: citation audit",
+			code: "narrative_output_missing_token",
+			message: "citation audit missing token: citation audit",
 			severity: "error",
 		});
 		expect(result.finalOutput).toContain("not accepted");
@@ -704,7 +718,7 @@ Use the custom audit role.
 				return {
 					taskId: request.taskId,
 					status: "success",
-					summary: "custom runner",
+					summary: "literature-search-results custom runner",
 					producedArtifacts: [{ id: "artifact-1", kind: "literature-search-results", uri: "memory://artifact-1" }],
 					artifactBriefs: [
 						{
@@ -805,6 +819,38 @@ Use the custom audit role.
 			profileId: "citation-checker",
 			workerType: "citation-checker",
 		});
+		expect(result.acceptanceReport?.accepted).toBe(true);
+	});
+
+	it("does not treat fallback narrative outputs as artifact requirements", async () => {
+		let expectedArtifactKinds: string[] | undefined;
+		const runtime = createLeadAgentRuntime({
+			cwd: makeTempDir(),
+			workerRunner: async (request) => {
+				expectedArtifactKinds = request.outputContract?.requirements
+					.filter((requirement) => requirement.kind === "artifact")
+					.map((requirement) => requirement.artifactKind);
+				return {
+					taskId: request.taskId,
+					status: "success",
+					summary: "evidence summary completed",
+					producedArtifacts: [],
+					warnings: [],
+					openQuestions: [],
+					executionTrace: createExecutionTrace("run-fallback-narrative"),
+				};
+			},
+		});
+
+		const result = await runtime.run({
+			taskId: "task-fallback-narrative",
+			objective: "Summarize the evidence.",
+			profileId: "researcher",
+			expectedOutputs: ["evidence summary"],
+		});
+
+		expect(result.workflowPlan?.steps[0]?.expectedArtifactKinds).toEqual([]);
+		expect(expectedArtifactKinds).toEqual([]);
 		expect(result.acceptanceReport?.accepted).toBe(true);
 	});
 
