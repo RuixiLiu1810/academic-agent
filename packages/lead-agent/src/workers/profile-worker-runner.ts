@@ -76,6 +76,10 @@ function buildPrompt(request: WorkerRequest): string {
 		`Objective: ${request.objective}`,
 		`Expected outputs: ${request.expectedOutputs.join(", ") || "(none)"}`,
 		`Acceptance criteria: ${request.acceptanceCriteria.join(", ") || "(none)"}`,
+		`Attempt: ${request.attemptContext?.attempt ?? 1}/${request.attemptContext?.maxAttempts ?? 1}`,
+		`Previous acceptance issues: ${
+			request.attemptContext?.previousIssues?.map((issue) => `${issue.code}: ${issue.message}`).join("; ") ?? "none"
+		}`,
 		"Return a concise final summary after using any required tools.",
 	].join("\n");
 }

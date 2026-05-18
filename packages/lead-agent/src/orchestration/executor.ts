@@ -188,8 +188,21 @@ export async function executeWorkflowPlan(options: ExecuteWorkflowPlanOptions): 
 		let acceptanceReport: AcceptanceReport;
 		let attempt = 0;
 		const maxAttempts = maxAttemptsForRequest(workerRequest);
+		let previousAcceptanceReport: AcceptanceReport | undefined;
 		while (true) {
 			attempt += 1;
+			const attemptWorkerRequest: WorkerRequest = {
+				...workerRequest,
+				attemptContext: {
+					attempt,
+					maxAttempts,
+					previousIssues: previousAcceptanceReport?.issues,
+					previousFailureReason: previousAcceptanceReport?.issues
+						.filter((issue) => issue.severity === "error")
+						.map((issue) => issue.message)
+						.join("; "),
+				},
+			};
 			options.onEvent?.({
 				type: "workflow_step_start",
 				taskId: plan.taskId,
@@ -201,17 +214,18 @@ export async function executeWorkflowPlan(options: ExecuteWorkflowPlanOptions): 
 				message: `Step ${step.order}/${orderedSteps.length}: ${step.profileId}`,
 			});
 			try {
-				workerResult = await workerRunner(workerRequest);
+				workerResult = await workerRunner(attemptWorkerRequest);
 			} catch (error) {
 				workerResult = createFailedWorkerResult(workerRequest.taskId, plan.sessionId, error);
 			}
 
-			acceptanceReport = createLeadAcceptanceReport(workerRequest, workerResult, {
+			acceptanceReport = createLeadAcceptanceReport(attemptWorkerRequest, workerResult, {
 				artifactStore: options.artifactStore,
 			});
 			if (acceptanceReport.accepted || hasBlockingOpenQuestion(workerResult) || attempt >= maxAttempts) {
 				break;
 			}
+			previousAcceptanceReport = acceptanceReport;
 			workspace.appendWorkflowLog({
 				type: "workflow_step_retry",
 				taskId: plan.taskId,
