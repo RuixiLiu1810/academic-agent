@@ -3,11 +3,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { WorkerResult } from "@mariozechner/pi-agent-contracts";
 import { createExecutionTrace } from "@mariozechner/pi-agent-contracts";
-import { SessionManager } from "@mariozechner/pi-agent-host";
+import { AuthStorage, SessionManager } from "@mariozechner/pi-agent-host";
+import { fauxAssistantMessage, registerFauxProvider } from "@mariozechner/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
 import type { LeadAgentTaskRequest } from "../src/index.js";
 import { createLeadAgentRuntime, loadAcademicProfilesFromDir, parseAcademicProfileMarkdown } from "../src/index.js";
-import { summarizeWorkflowTemplatesForPlanner, WORKFLOW_TEMPLATES } from "../src/orchestration/index.js";
+import {
+	ACADEMIC_COMPACTION_KIND,
+	buildLeadConversationContext,
+	summarizeWorkflowTemplatesForPlanner,
+	WORKFLOW_TEMPLATES,
+} from "../src/orchestration/index.js";
 import { buildLeadDirectMessage } from "../src/prompts.js";
 
 let tempDirs: string[] = [];
@@ -928,6 +934,102 @@ Use the custom audit role.
 		expect(captured[0]?.objective).toBe("Synthesize the abstract.");
 		expect(captured[0]?.constraints).toContain("150 words max");
 	});
+
+	it("passes lead conversation context to direct runner follow-ups", async () => {
+		const seenContextOutputs: string[][] = [];
+		const runtime = createLeadAgentRuntime({
+			directRunner: async (_req, context) => {
+				seenContextOutputs.push(context.conversationContext?.recentLeadOutputs ?? []);
+				return "Direct answer.";
+			},
+			workerRunner: async () => {
+				throw new Error("should not run");
+			},
+		});
+
+		await runtime.run({
+			taskId: "task-direct-context-1",
+			objective: "Summarize NIR spectroscopy.",
+			dispatchMode: "direct",
+		});
+		await runtime.run({
+			taskId: "task-direct-context-2",
+			objective: "Continue that summary.",
+			dispatchMode: "direct",
+		});
+
+		expect(seenContextOutputs[0]).toEqual([]);
+		expect(seenContextOutputs[1]).toContain("Direct answer.");
+	});
+
+	it("default direct runner uses lead context without carrying an internal cached session", async () => {
+		const faux = registerFauxProvider();
+		try {
+			const authStorage = AuthStorage.inMemory();
+			authStorage.setRuntimeApiKey(faux.getModel().provider, "faux-key");
+			const assistantMessageCounts: number[] = [];
+			faux.setResponses([
+				fauxAssistantMessage("First direct answer."),
+				(context) => {
+					assistantMessageCounts.push(context.messages.filter((message) => message.role === "assistant").length);
+					return fauxAssistantMessage("Second direct answer.");
+				},
+			]);
+			const runtime = createLeadAgentRuntime({
+				authStorage,
+				model: faux.getModel(),
+				workerRunner: async () => {
+					throw new Error("should not run");
+				},
+			});
+
+			await runtime.run({
+				taskId: "task-default-direct-1",
+				objective: "Summarize NIR spectroscopy.",
+				dispatchMode: "direct",
+			});
+			const result = await runtime.run({
+				taskId: "task-default-direct-2",
+				objective: "Continue that summary.",
+				dispatchMode: "direct",
+			});
+
+			expect(result.finalOutput).toBe("Second direct answer.");
+			expect(assistantMessageCounts).toEqual([0]);
+		} finally {
+			faux.unregister();
+		}
+	});
+
+	it("creates academic compaction entries in the lead session", async () => {
+		const runtime = createLeadAgentRuntime({
+			directRunner: async () => "Initial academic synthesis.",
+			workerRunner: async () => {
+				throw new Error("should not run");
+			},
+		});
+		await runtime.run({
+			taskId: "task-compact-source",
+			objective: "Summarize NIR spectroscopy.",
+			dispatchMode: "direct",
+		});
+
+		const compaction = runtime.compactAcademic("Summarize NIR spectroscopy.");
+		const context = buildLeadConversationContext({
+			sessionManager: runtime.sessionManager,
+			currentObjective: "Continue.",
+		});
+
+		expect(compaction.summary).toContain("Academic working memory compacted.");
+		expect(compaction.details).toMatchObject({
+			kind: ACADEMIC_COMPACTION_KIND,
+			version: "v1",
+			researchObjective: "Summarize NIR spectroscopy.",
+			lastAcceptedFinalOutput: "Initial academic synthesis.",
+		});
+		expect(context.compactionSummary).toContain("Academic working memory compacted.");
+		expect(context.compactionDetails).toMatchObject({ kind: ACADEMIC_COMPACTION_KIND });
+	});
 });
 
 describe("buildLeadDirectMessage", () => {
@@ -956,5 +1058,36 @@ describe("buildLeadDirectMessage", () => {
 	it("omits constraints section when not provided", () => {
 		const prompt = buildLeadDirectMessage({ objective: "Polish conclusion." });
 		expect(prompt).not.toContain("Constraints:");
+	});
+
+	it("renders direct lead conversation context as refs and briefs only", () => {
+		const prompt = buildLeadDirectMessage(
+			{ objective: "Continue synthesis." },
+			{
+				conversationContext: {
+					sessionId: "session-1",
+					currentObjective: "Continue synthesis.",
+					recentUserObjectives: ["Find NIR literature."],
+					recentLeadOutputs: ["Initial answer."],
+					recentDecisions: [],
+					recentWorkflowResults: [],
+					priorArtifacts: [{ id: "artifact-1", kind: "literature-search-results", uri: "memory://artifact-1" }],
+					artifactBriefs: [
+						{
+							artifactId: "artifact-1",
+							kind: "literature-search-results",
+							brief: "Candidate bibliography.",
+						},
+					],
+					compactionSummary: "Prior work focused on NIR spectroscopy.",
+					budget: { maxChars: 12000, usedChars: 500, truncatedSections: [] },
+				},
+			},
+		);
+
+		expect(prompt).toContain("Lead Conversation Context:");
+		expect(prompt).toContain("artifact-1 (literature-search-results)");
+		expect(prompt).toContain("Candidate bibliography.");
+		expect(prompt).toContain("Treat artifact refs and briefs as pointers");
 	});
 });

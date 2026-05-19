@@ -324,10 +324,24 @@ function handleTuiSlashCommand(
 			}
 			break;
 		}
+		case "compact": {
+			if (value && value !== "academic") {
+				footer.setText(theme.error("compact supports only: /compact academic"));
+				break;
+			}
+			try {
+				const compaction = options.runtime.compactAcademic("Manual TUI compaction.");
+				chatContainer.addChild(new Text(theme.dim(compaction.summary), 1, 0));
+				footer.setText(theme.dim("academic working memory compacted"));
+			} catch (error) {
+				footer.setText(theme.error(error instanceof Error ? error.message : String(error)));
+			}
+			break;
+		}
 		case "help":
 			footer.setText(
 				theme.dim(
-					"/settings · /task-type · /profile · /expected-output · /model · /thinking · /session · /hotkeys · /new · /help",
+					"/settings · /task-type · /profile · /expected-output · /model · /thinking · /compact academic · /session · /hotkeys · /new · /help",
 				),
 			);
 			break;

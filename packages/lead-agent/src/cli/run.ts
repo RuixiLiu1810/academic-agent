@@ -227,6 +227,7 @@ export async function runLeadAgentCli(argv: string[], io: LeadAgentCliIo = {}): 
 		workerRunner: io.workerRunner,
 		directRunner: io.directRunner,
 		artifactDir: args.artifactDir,
+		authStorage: services.authStorage,
 		confirmPlan: args.confirmPlan,
 		model: resolvedModel,
 		thinkingLevel: resolvedThinkingLevel,
@@ -273,6 +274,11 @@ export async function runLeadAgentCli(argv: string[], io: LeadAgentCliIo = {}): 
 		return 1;
 	}
 	const fileInputs = readLeadCliFileInputs(cwd, args.fileArgs);
+	if (objective === "/compact" || objective === "/compact academic") {
+		const compaction = runtime.compactAcademic("Manual CLI compaction.");
+		stdout(`${compaction.summary}\n`);
+		return 0;
+	}
 	const result = await runtime.run(createTaskRequest(objective, args, fileInputs));
 	const persisted = args.artifactDir ? persistLeadCliArtifacts(result, args.artifactDir) : undefined;
 	const view = createLeadAgentRunView(result, {

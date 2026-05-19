@@ -12,8 +12,10 @@ import type {
 import { createExecutionTrace } from "@mariozechner/pi-agent-contracts";
 import type { ArtifactStore } from "@mariozechner/pi-artifact-core";
 import { createLeadAcceptanceReport } from "./acceptance.js";
+import type { LeadConversationContext, LeadWorkflowResultSummary } from "./lead-context.js";
 import { outputContractForStep } from "./output-contracts.js";
 import type { LeadAgentWorkerRunner } from "./types.js";
+import { buildWorkerContextPackage, workerContextPackageToJsonObject } from "./worker-context.js";
 import type { LeadSessionWorkspace } from "./workspace.js";
 
 export interface ExecuteWorkflowPlanOptions {
@@ -25,6 +27,7 @@ export interface ExecuteWorkflowPlanOptions {
 	onEvent?: (event: WorkflowExecutionEvent) => void;
 	constraints?: string[];
 	metadata?: JsonObject;
+	conversationContext?: LeadConversationContext;
 }
 
 export interface WorkflowExecutionEvent {
@@ -114,6 +117,22 @@ function mergeArtifactRefs(left: readonly ArtifactRef[], right: readonly Artifac
 	return [...refs.values()];
 }
 
+function workflowResultSummariesForSteps(stepResults: readonly WorkflowStepResult[]): LeadWorkflowResultSummary[] {
+	return stepResults.flatMap((result) => {
+		if (!result.workerRequest || !result.workerResult || !result.acceptanceReport) {
+			return [];
+		}
+		return [
+			{
+				taskId: result.workerRequest.taskId,
+				accepted: result.acceptanceReport.accepted,
+				producedArtifactKinds: result.workerResult.producedArtifacts.map((artifact) => artifact.kind),
+				issues: result.acceptanceReport.issues.map((issue) => issue.message),
+			},
+		];
+	});
+}
+
 function maxAttemptsForRequest(workerRequest: WorkerRequest): number {
 	return Math.max(workerRequest.retryPolicy?.maxAttempts ?? DEFAULT_RETRY_ATTEMPTS, 1);
 }
@@ -169,18 +188,33 @@ export async function executeWorkflowPlan(options: ExecuteWorkflowPlanOptions): 
 	for (const [stepIndex, step] of orderedSteps.entries()) {
 		const inputArtifacts = mergeArtifactRefs(step.inputArtifactRefs, carriedArtifacts);
 		const retrievedArtifacts = retrievedArtifactsForInput(inputArtifacts, options.artifactStore);
+		const previousWorkflowResults = workflowResultSummariesForSteps(stepResults);
+		const conversationContext = options.conversationContext
+			? {
+					...options.conversationContext,
+					recentWorkflowResults: [
+						...options.conversationContext.recentWorkflowResults,
+						...previousWorkflowResults,
+					],
+				}
+			: undefined;
+		const leadContextPackage = buildWorkerContextPackage({
+			conversationContext,
+			step,
+			inputArtifacts,
+			stepArtifactBriefs: artifactBriefs,
+		});
 		const workerRequest = workerRequestForStep(
 			{ ...plan, steps: orderedSteps },
 			stepIndex,
 			profiles,
 			inputArtifacts,
 			options.constraints ?? [],
-			retrievedArtifacts
-				? {
-						...(options.metadata ?? {}),
-						retrievedArtifacts,
-					}
-				: options.metadata,
+			{
+				...(options.metadata ?? {}),
+				leadContextPackage: workerContextPackageToJsonObject(leadContextPackage),
+				...(retrievedArtifacts ? { retrievedArtifacts } : {}),
+			},
 		);
 		workspace.writeStepJson(plan.taskId, step.order, step.profileId, "worker-request.json", workerRequest);
 

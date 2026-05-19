@@ -6,6 +6,7 @@ import type {
 	WorkerResult,
 	WorkflowPlan,
 } from "@mariozechner/pi-agent-contracts";
+import type { LeadConversationContext } from "./lead-context.js";
 
 export interface LeadTaskPlanningInput {
 	taskId: string;
@@ -14,8 +15,10 @@ export interface LeadTaskPlanningInput {
 	constraints: string[];
 	expectedOutputs: string[];
 	inputArtifacts: ArtifactRef[];
+	availableArtifactRefs: ArtifactRef[];
 	profiles: readonly WorkerProfile[];
 	artifactBriefs: ArtifactBrief[];
+	conversationContext?: LeadConversationContext;
 }
 
 export interface WorkflowTemplateStep {
@@ -38,6 +41,7 @@ export interface PlannerValidationContext {
 	profiles: readonly WorkerProfile[];
 	templates: WorkflowTemplate[];
 	inputArtifacts: ArtifactRef[];
+	availableArtifactRefs?: ArtifactRef[];
 }
 
 export interface WorkflowPlanner {

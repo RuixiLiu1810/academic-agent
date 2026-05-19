@@ -9,6 +9,7 @@ function ctx(overrides: Partial<Parameters<typeof validateWorkflowPlan>[1]> = {}
 		profiles: DEFAULT_ACADEMIC_PROFILES,
 		templates: WORKFLOW_TEMPLATES,
 		inputArtifacts: [],
+		availableArtifactRefs: [],
 		...overrides,
 	};
 }
@@ -151,7 +152,21 @@ describe("validateWorkflowPlan", () => {
 					mode: "workflow",
 					steps: [{ ...validStep, inputArtifactRefs: [artifact] }],
 				},
-				ctx({ inputArtifacts: [artifact] }),
+				ctx({ inputArtifacts: [artifact], availableArtifactRefs: [artifact] }),
+			),
+		).toEqual([]);
+	});
+
+	it("accepts inputArtifactRefs when artifact id comes from prior context", () => {
+		const artifact = { id: "prior-1", kind: "literature-search-results", uri: "memory://prior-1" };
+		expect(
+			validateWorkflowPlan(
+				{
+					...validDirectPlan,
+					mode: "workflow",
+					steps: [{ ...validStep, inputArtifactRefs: [artifact] }],
+				},
+				ctx({ inputArtifacts: [], availableArtifactRefs: [artifact] }),
 			),
 		).toEqual([]);
 	});
@@ -219,6 +234,7 @@ describe("createFauxWorkflowPlanner", () => {
 			constraints: [],
 			expectedOutputs: ["review memo"],
 			inputArtifacts: [],
+			availableArtifactRefs: [],
 			profiles: DEFAULT_ACADEMIC_PROFILES,
 			artifactBriefs: [],
 		});
@@ -246,6 +262,7 @@ describe("createFauxWorkflowPlanner", () => {
 				constraints: [],
 				expectedOutputs: [],
 				inputArtifacts: [],
+				availableArtifactRefs: [],
 				profiles: DEFAULT_ACADEMIC_PROFILES,
 				artifactBriefs: [],
 			}),

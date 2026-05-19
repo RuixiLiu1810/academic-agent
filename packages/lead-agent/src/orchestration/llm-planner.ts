@@ -1,4 +1,4 @@
-import type { ArtifactRef, WorkerProfile, WorkflowPlan } from "@mariozechner/pi-agent-contracts";
+import type { ArtifactBrief, ArtifactRef, WorkerProfile, WorkflowPlan } from "@mariozechner/pi-agent-contracts";
 import { WorkflowPlanSchema } from "@mariozechner/pi-agent-contracts";
 import type { Context, Tool, ToolCall } from "@mariozechner/pi-ai";
 import { completeSimple } from "@mariozechner/pi-ai";
@@ -71,6 +71,9 @@ Rules:
 - Use only worker profile IDs listed in Available worker profiles.
 - Treat the listed workflow templates as guidance — you may use, adapt, or combine them. Do not invent profile IDs.
 - Do not invent worker types, artifact IDs, or inter-step artifact references.
+- Before selecting direct/workflow mode, decide whether the request is a new task, continuation, revision,
+  prior-artifact inspection/use request, or direct follow-up. State that continuity decision in the plan rationale.
+- Prefer a new task unless the current request clearly refers to prior objectives, prior outputs, or listed artifacts.
 - Do not switch to mode=direct merely to avoid validation errors.
   Only choose direct if the task truly requires no specialist worker.
 - If mode=direct, steps MUST be [].
@@ -82,7 +85,7 @@ Rules:
   Step objective: <specific task for this worker>
 
   Do not merge them. Do not paraphrase the user objective.
-- Only reference artifact IDs from the provided Input artifacts list in inputArtifactRefs.
+- Only reference artifact IDs from the provided Available artifacts list in inputArtifactRefs.
   Prior-step outputs are automatically available to later workers — do not invent inter-step IDs.`;
 
 function formatArtifacts(artifacts: ArtifactRef[]): string {
@@ -90,8 +93,42 @@ function formatArtifacts(artifacts: ArtifactRef[]): string {
 	return artifacts.map((a) => `- ${a.id} (${a.kind})`).join("\n");
 }
 
+function formatArtifactBriefs(briefs: readonly ArtifactBrief[]): string {
+	if (briefs.length === 0) return "none";
+	return briefs
+		.map((brief) => {
+			const title = brief.title ? ` title=${brief.title}` : "";
+			return `- ${brief.artifactId} (${brief.kind}${title}): ${brief.brief}`;
+		})
+		.join("\n");
+}
+
 function formatList(values: readonly string[]): string {
 	return values.length > 0 ? values.join(", ") : "none";
+}
+
+function formatConversationContext(input: LeadTaskPlanningInput): string {
+	const context = input.conversationContext;
+	if (!context) return "none";
+	return [
+		`Current objective: ${context.currentObjective}`,
+		`Recent user objectives:\n${context.recentUserObjectives.length > 0 ? context.recentUserObjectives.map((value) => `- ${value}`).join("\n") : "none"}`,
+		`Recent lead outputs:\n${context.recentLeadOutputs.length > 0 ? context.recentLeadOutputs.map((value) => `- ${value}`).join("\n") : "none"}`,
+		`Recent workflow results:\n${
+			context.recentWorkflowResults.length > 0
+				? context.recentWorkflowResults
+						.map(
+							(result) =>
+								`- ${result.taskId}: accepted=${String(result.accepted)}, artifacts=${formatList(result.producedArtifactKinds)}, issues=${formatList(result.issues)}`,
+						)
+						.join("\n")
+				: "none"
+		}`,
+		`Prior artifacts:\n${formatArtifacts(context.priorArtifacts)}`,
+		`Artifact briefs:\n${formatArtifactBriefs(context.artifactBriefs)}`,
+		`Compaction summary:\n${context.compactionSummary ?? "none"}`,
+		`Context budget: ${context.budget.usedChars}/${context.budget.maxChars} chars; truncated=${formatList(context.budget.truncatedSections)}`,
+	].join("\n");
 }
 
 function buildUserMessage(input: LeadTaskPlanningInput, config: LlmWorkflowPlannerConfig): string {
@@ -120,6 +157,8 @@ function buildUserMessage(input: LeadTaskPlanningInput, config: LlmWorkflowPlann
 		`Constraints:\n${input.constraints.length > 0 ? input.constraints.join("\n") : "none"}`,
 		`Expected outputs:\n${input.expectedOutputs.length > 0 ? input.expectedOutputs.join("\n") : "none"}`,
 		`Input artifacts:\n${formatArtifacts(input.inputArtifacts)}`,
+		`Available artifacts:\n${formatArtifacts(input.availableArtifactRefs)}`,
+		`Conversation context:\n${formatConversationContext(input)}`,
 		`Available worker profiles:\n${profileLines}`,
 		`Available workflow templates (use, adapt, or combine as needed):\n${templateLines}`,
 	].join("\n\n");
@@ -185,6 +224,7 @@ export function createLlmWorkflowPlanner(config: LlmWorkflowPlannerConfig): Work
 				profiles: config.profiles,
 				templates: config.templates,
 				inputArtifacts: input.inputArtifacts,
+				availableArtifactRefs: input.availableArtifactRefs,
 			};
 
 			// First attempt

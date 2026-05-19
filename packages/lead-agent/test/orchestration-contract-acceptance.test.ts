@@ -129,4 +129,40 @@ describe("contract-aware lead acceptance", () => {
 
 		expect(report.accepted).toBe(true);
 	});
+
+	it("uses outputContract before legacy expected outputs", () => {
+		const report = createLeadAcceptanceReport(
+			{
+				taskId: "contract-priority",
+				workerType: "writer",
+				objective: "Write a short summary.",
+				constraints: [],
+				inputArtifacts: [],
+				expectedOutputs: ["bibliography candidates"],
+				acceptanceCriteria: [],
+				outputContract: {
+					contractId: "contract:writer:narrative",
+					profileId: "writer",
+					successMode: "all-required",
+					requirements: [
+						{
+							id: "summary",
+							kind: "narrative",
+							label: "summary",
+							required: true,
+							section: "summary",
+							minChars: 10,
+						},
+					],
+				},
+			},
+			result({
+				taskId: "contract-priority",
+				summary: "This summary is long enough.",
+			}),
+		);
+
+		expect(report.accepted).toBe(true);
+		expect(report.issues.find((issue) => issue.code === "expected_output_missing")).toBeUndefined();
+	});
 });

@@ -34,6 +34,7 @@ const baseInput = {
 	constraints: [],
 	expectedOutputs: [],
 	inputArtifacts: [],
+	availableArtifactRefs: [],
 	profiles: DEFAULT_ACADEMIC_PROFILES,
 	artifactBriefs: [],
 };
@@ -96,6 +97,61 @@ describe("createLlmWorkflowPlanner", () => {
 			"expected outputs: search strategy, query plan, bibliography candidates, retrieval gaps",
 		);
 		expect(prompt).toContain("acceptance criteria: Candidate bibliography is separated from verified evidence");
+	});
+
+	it("includes bounded conversation context and prior artifact refs in the planner prompt", async () => {
+		const { faux, planner } = makePlanner();
+		let prompt = "";
+		faux.setResponses([
+			(context) => {
+				const firstMessage = context.messages[0];
+				const firstBlock =
+					firstMessage?.role === "user" && Array.isArray(firstMessage.content)
+						? firstMessage.content[0]
+						: undefined;
+				if (firstBlock?.type === "text") {
+					prompt = firstBlock.text;
+				}
+				return fauxAssistantMessage(fauxToolCall("submit_workflow_plan", { plan: validPlan }), {
+					stopReason: "toolUse",
+				});
+			},
+		]);
+
+		await planner.plan({
+			...baseInput,
+			availableArtifactRefs: [{ id: "prior-lit", kind: "literature-search-results", uri: "memory://prior-lit" }],
+			conversationContext: {
+				sessionId: "session-1",
+				currentObjective: "Continue with the previous NIR search.",
+				recentUserObjectives: ["Find NIR literature."],
+				recentLeadOutputs: ["I found initial NIR search results."],
+				recentDecisions: [],
+				recentWorkflowResults: [
+					{
+						taskId: "task-0",
+						accepted: true,
+						producedArtifactKinds: ["literature-search-results"],
+						issues: [],
+					},
+				],
+				priorArtifacts: [{ id: "prior-lit", kind: "literature-search-results", uri: "memory://prior-lit" }],
+				artifactBriefs: [
+					{
+						artifactId: "prior-lit",
+						kind: "literature-search-results",
+						brief: "Initial NIR bibliography candidates.",
+					},
+				],
+				compactionSummary: "Prior search focused on spectroscopy.",
+				budget: { maxChars: 12000, usedChars: 500, truncatedSections: [] },
+			},
+		});
+
+		expect(prompt).toContain("Conversation context:");
+		expect(prompt).toContain("Find NIR literature.");
+		expect(prompt).toContain("prior-lit (literature-search-results)");
+		expect(prompt).toContain("Prior search focused on spectroscopy.");
 	});
 
 	it("retries with repair context when the first call does not emit a tool call", async () => {

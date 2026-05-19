@@ -14,6 +14,7 @@ import type {
 } from "@mariozechner/pi-agent-contracts";
 import {
 	type AgentHostSessionEvent,
+	type AuthStorage,
 	createAgentHostSession,
 	type ModelRegistry,
 	SessionManager,
@@ -25,7 +26,11 @@ import { createCrossrefProvider } from "./literature/providers/crossref.js";
 import { createPubMedProvider } from "./literature/providers/pubmed.js";
 import { createSemanticScholarProvider } from "./literature/providers/semantic-scholar.js";
 import { createLiteratureSearchTool } from "./literature/tools.js";
+import type { LeadConversationContext } from "./orchestration/index.js";
 import {
+	type AcademicCompactionResult,
+	buildLeadConversationContext,
+	compactLeadAcademicSession,
 	createFauxWorkflowPlanner,
 	createLeadSessionWorkspace,
 	createLeadTaskPlanningInput,
@@ -109,7 +114,15 @@ export interface LeadAgentResult {
 	acceptanceReport?: AcceptanceReport;
 	workerResult?: WorkerResult;
 }
-export type LeadAgentDirectRunner = (request: LeadAgentTaskRequest) => Promise<string>;
+export interface DirectRunContext {
+	conversationContext?: LeadConversationContext;
+	model?: LeadAgentModel;
+	thinkingLevel?: ThinkingLevel;
+	tools?: string[];
+	noTools?: "all" | "builtin";
+}
+
+export type LeadAgentDirectRunner = (request: LeadAgentTaskRequest, context: DirectRunContext) => Promise<string>;
 export type { LeadAgentWorkerRunner } from "./orchestration/index.js";
 
 export interface LiteratureSearchConfig {
@@ -128,6 +141,7 @@ export interface LeadAgentRuntimeOptions {
 	workspace?: LeadSessionWorkspace;
 	artifactDir?: string;
 	artifactStore?: Pick<ArtifactStore, "get">;
+	authStorage?: AuthStorage;
 	confirmPlan?: boolean;
 	profiles?: WorkerProfile[];
 	sessionManager?: SessionManager;
@@ -150,6 +164,7 @@ export interface LeadAgentRuntime {
 	plan(request: LeadAgentTaskRequest): LeadAgentDecision;
 	/** Update the model and thinking level used for subsequent direct tasks. */
 	setModel(model: LeadAgentModel | undefined, thinkingLevel?: ThinkingLevel): void;
+	compactAcademic(currentObjective?: string): AcademicCompactionResult;
 	profiles: readonly WorkerProfile[];
 	sessionManager: SessionManager;
 }
@@ -557,8 +572,9 @@ async function synthesizeDirect(
 	request: LeadAgentTaskRequest,
 	decision: LeadAgentDecision,
 	directRunner: LeadAgentDirectRunner,
+	context: DirectRunContext,
 ): Promise<LeadAgentResult> {
-	const finalOutput = await directRunner(request);
+	const finalOutput = await directRunner(request, context);
 	return {
 		taskId,
 		finalOutput,
@@ -645,42 +661,37 @@ function createDefaultDirectRunner(
 	thinkingLevelRef: { value: ThinkingLevel | undefined },
 	toolsRef: { value: string[] | undefined },
 	noToolsRef: { value: "all" | "builtin" },
-	resetRef: { value: boolean },
+	authStorage: AuthStorage | undefined,
 ): LeadAgentDirectRunner {
-	// Persisted session for multi-turn context continuity.
-	// Replaced when resetRef.value is true (e.g. after setModel).
-	let cachedSession: Awaited<ReturnType<typeof createAgentHostSession>>["session"] | undefined;
-
-	return async (request) => {
-		if (!cachedSession || resetRef.value) {
-			const { session } = await createAgentHostSession({
-				cwd,
-				model: modelRef.value,
-				thinkingLevel: thinkingLevelRef.value,
-				tools: toolsRef.value,
-				noTools: toolsRef.value ? undefined : noToolsRef.value,
-				resourceLoaderOptions: {
-					systemPromptOverride: () => LEAD_AGENT_SYSTEM_PROMPT,
-				},
-			});
-			cachedSession = session;
-			resetRef.value = false;
-		}
+	return async (request, context) => {
+		const activeTools = context.tools ?? toolsRef.value;
+		const { session } = await createAgentHostSession({
+			cwd,
+			authStorage,
+			sessionManager: SessionManager.inMemory(cwd),
+			model: context.model ?? modelRef.value,
+			thinkingLevel: context.thinkingLevel ?? thinkingLevelRef.value,
+			tools: activeTools,
+			noTools: activeTools ? undefined : (context.noTools ?? noToolsRef.value),
+			resourceLoaderOptions: {
+				systemPromptOverride: () => LEAD_AGENT_SYSTEM_PROMPT,
+			},
+		});
 		const onEvent = request.onEvent;
 		const onDirectRunEvent = request.onDirectRunEvent;
 		let unsub: (() => void) | undefined;
 		if (onEvent || onDirectRunEvent) {
-			unsub = cachedSession.subscribe((event) => {
+			unsub = session.subscribe((event) => {
 				onDirectRunEvent?.(event);
 				onEvent?.({ type: "direct_session", event });
 			});
 		}
 		try {
-			await cachedSession.prompt(buildLeadDirectMessage(request));
+			await session.prompt(buildLeadDirectMessage(request, { conversationContext: context.conversationContext }));
 		} finally {
 			unsub?.();
 		}
-		const text = extractLastAssistantText(cachedSession.messages as readonly { role: string; content: unknown }[]);
+		const text = extractLastAssistantText(session.messages as readonly { role: string; content: unknown }[]);
 		return text.trim().length > 0 ? text : request.objective;
 	};
 }
@@ -809,7 +820,6 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 	const thinkingLevelRef: { value: ThinkingLevel | undefined } = { value: options.thinkingLevel };
 	const toolsRef: { value: string[] | undefined } = { value: options.tools };
 	const noToolsRef: { value: "all" | "builtin" } = { value: options.noTools ?? "all" };
-	const resetRef: { value: boolean } = { value: false };
 
 	const directRunner =
 		options.directRunner ??
@@ -819,7 +829,7 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			thinkingLevelRef,
 			toolsRef,
 			noToolsRef,
-			resetRef,
+			options.authStorage,
 		);
 
 	let abortController = new AbortController();
@@ -832,6 +842,10 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			content: [{ type: "text", text: request.objective }],
 			timestamp: Date.now(),
 		});
+		const conversationContext = buildLeadConversationContext({
+			sessionManager,
+			currentObjective: request.objective,
+		});
 		const decision = planLeadAgentTask(request, profiles);
 		recordLeadEvent(sessionManager, "lead-agent.decision", {
 			taskId,
@@ -843,7 +857,13 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 		if (request.dispatchMode === "direct") {
 			const workflowPlan = createDirectWorkflowPlan(taskId, sessionId, request);
 			emitPlanSummary(request, workflowPlan, taskId, sessionId);
-			const result = await synthesizeDirect(taskId, sessionId, request, decision, directRunner);
+			const result = await synthesizeDirect(taskId, sessionId, request, decision, directRunner, {
+				conversationContext,
+				model: modelRef.value,
+				thinkingLevel: thinkingLevelRef.value,
+				tools: toolsRef.value,
+				noTools: noToolsRef.value,
+			});
 			result.workflowPlan = workflowPlan;
 			recordLeadAssistantMessage(sessionManager, result.finalOutput);
 			recordLeadEvent(sessionManager, "lead-agent.result", {
@@ -859,6 +879,7 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			taskId,
 			sessionId,
 			profiles,
+			conversationContext,
 		});
 		let workflowPlan: WorkflowPlan;
 		try {
@@ -918,7 +939,13 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			return result;
 		}
 		if (workflowPlan.mode === "direct") {
-			const result = await synthesizeDirect(taskId, sessionId, request, workflowDecision, directRunner);
+			const result = await synthesizeDirect(taskId, sessionId, request, workflowDecision, directRunner, {
+				conversationContext,
+				model: modelRef.value,
+				thinkingLevel: thinkingLevelRef.value,
+				tools: toolsRef.value,
+				noTools: noToolsRef.value,
+			});
 			result.workflowPlan = workflowPlan;
 			recordLeadAssistantMessage(sessionManager, result.finalOutput);
 			recordLeadEvent(sessionManager, "lead-agent.result", {
@@ -953,6 +980,7 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			onEvent: request.onEvent,
 			constraints: request.constraints ?? [],
 			metadata: request.metadata,
+			conversationContext,
 		});
 		const acceptanceReport = execution.acceptanceReports.at(-1);
 		const workerResult = latestWorkflowWorkerResult(execution.stepResults);
@@ -983,8 +1011,12 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 		setModel(model, thinkingLevel) {
 			modelRef.value = model;
 			thinkingLevelRef.value = thinkingLevel;
-			// Force a new agent session on next direct run so the new model takes effect.
-			resetRef.value = true;
+		},
+		compactAcademic(currentObjective) {
+			return compactLeadAcademicSession({
+				sessionManager,
+				currentObjective,
+			});
 		},
 		abort() {
 			abortController.abort();

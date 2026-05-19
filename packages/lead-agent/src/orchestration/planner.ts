@@ -42,7 +42,8 @@ export function validateWorkflowPlan(plan: unknown, context: PlannerValidationCo
 	}
 
 	const profileIds = new Set(context.profiles.map((profile) => profile.id));
-	const inputArtifactIds = new Set(context.inputArtifacts.map((a) => a.id));
+	const availableArtifacts = context.availableArtifactRefs ?? context.inputArtifacts;
+	const inputArtifactIds = new Set(availableArtifacts.map((a) => a.id));
 	const stepIds = new Set<string>();
 
 	if (p.mode === "direct" && p.steps.length > 0) {
@@ -159,6 +160,7 @@ export function createFauxWorkflowPlanner(factory: (input: LeadTaskPlanningInput
 				profiles: input.profiles,
 				templates: [],
 				inputArtifacts: input.inputArtifacts,
+				availableArtifactRefs: input.availableArtifactRefs,
 			});
 			return plan;
 		},

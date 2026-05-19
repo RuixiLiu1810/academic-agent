@@ -1,10 +1,17 @@
-import { createExecutionTrace, type WorkerRequest, type WorkerResult } from "@mariozechner/pi-agent-contracts";
+import {
+	type ArtifactRef,
+	createExecutionTrace,
+	type OutputRequirement,
+	type WorkerRequest,
+	type WorkerResult,
+} from "@mariozechner/pi-agent-contracts";
 import { createAgentHostSession } from "@mariozechner/pi-agent-host";
 import type { ToolDefinition } from "@mariozechner/pi-agent-host/extensions";
 import type { ToolResultMessage } from "@mariozechner/pi-ai";
 import type { ArtifactStore } from "@mariozechner/pi-artifact-core";
 import type { LiteratureSearchToolOutput } from "../literature/types.js";
 import type { LeadAgentWorkerRunner } from "../orchestration/types.js";
+import { formatWorkerContextPackageFromMetadata } from "../orchestration/worker-context.js";
 
 type ProfileToolDefinition = ToolDefinition;
 
@@ -69,18 +76,96 @@ function validateAllowedTools(
 	return undefined;
 }
 
-function buildPrompt(request: WorkerRequest): string {
+function requiresLiteratureArtifact(request: Pick<WorkerRequest, "workerType" | "profile">): boolean {
+	return request.profile?.id === "literature-searcher" || request.workerType === "literature-searcher";
+}
+
+export function inferProfileWorkerStatus(options: {
+	request: Pick<WorkerRequest, "workerType" | "profile" | "outputContract">;
+	summary: string | undefined;
+	toolOutputs: LiteratureSearchToolOutput[];
+	producedArtifacts: ArtifactRef[];
+}): WorkerResult["status"] {
+	if (requiresLiteratureArtifact(options.request)) {
+		return options.toolOutputs.length > 0 || options.producedArtifacts.length > 0 ? "success" : "failed";
+	}
+	if ((options.summary ?? "").trim().length > 0) {
+		return "success";
+	}
+	const hasStructuredContract =
+		options.request.outputContract?.requirements.some((requirement) => requirement.kind === "structured") ?? false;
+	return hasStructuredContract ? "success" : "failed";
+}
+
+function failureReasonForProfileWorker(request: WorkerRequest, status: WorkerResult["status"]): string | undefined {
+	if (status === "success") {
+		return undefined;
+	}
+	if (requiresLiteratureArtifact(request)) {
+		return "Profile worker did not produce a literature artifact.";
+	}
+	return "Profile worker did not produce a narrative or structured result.";
+}
+
+function formatOutputRequirement(requirement: OutputRequirement): string {
+	if (requirement.kind === "artifact") {
+		return `- ${requirement.id}: artifact ${requirement.artifactKind}, required=${requirement.required}`;
+	}
+	if (requirement.kind === "structured") {
+		return `- ${requirement.id}: structured path ${requirement.path}, required=${requirement.required}`;
+	}
+	return `- ${requirement.id}: narrative section ${requirement.section}, required=${requirement.required}`;
+}
+
+function formatOutputContract(request: WorkerRequest): string {
+	const contract = request.outputContract;
+	if (!contract) {
+		return "none";
+	}
+	return contract.requirements.map(formatOutputRequirement).join("\n");
+}
+
+function formatAttemptContext(request: WorkerRequest): string {
+	const attempt = request.attemptContext;
+	if (!attempt) {
+		return "Attempt: 1/1\nPrevious acceptance issues: none";
+	}
+	const issues =
+		attempt.previousIssues && attempt.previousIssues.length > 0
+			? attempt.previousIssues.map((issue) => `- ${issue.code}: ${issue.message}`).join("\n")
+			: "none";
+	return [
+		`Attempt: ${attempt.attempt}/${attempt.maxAttempts}`,
+		`Previous acceptance issues:\n${issues}`,
+		`Previous failure reason: ${attempt.previousFailureReason || "none"}`,
+	].join("\n");
+}
+
+export function buildProfileWorkerPrompt(request: WorkerRequest): string {
 	return [
 		request.profile?.rolePrompt ?? request.objective,
 		"",
-		`Objective: ${request.objective}`,
-		`Expected outputs: ${request.expectedOutputs.join(", ") || "(none)"}`,
-		`Acceptance criteria: ${request.acceptanceCriteria.join(", ") || "(none)"}`,
-		`Attempt: ${request.attemptContext?.attempt ?? 1}/${request.attemptContext?.maxAttempts ?? 1}`,
-		`Previous acceptance issues: ${
-			request.attemptContext?.previousIssues?.map((issue) => `${issue.code}: ${issue.message}`).join("; ") ?? "none"
-		}`,
-		"Return a concise final summary after using any required tools.",
+		"## Objective",
+		request.objective,
+		"",
+		"## Output Contract",
+		formatOutputContract(request),
+		"",
+		"## Attempt Context",
+		formatAttemptContext(request),
+		"",
+		"## Lead Context Package",
+		formatWorkerContextPackageFromMetadata(request.metadata),
+		"",
+		"## Acceptance Criteria",
+		request.acceptanceCriteria.join("\n") || "none",
+		"",
+		"## Final Response Rules",
+		"- Explicitly satisfy each required output contract.",
+		"- If this is a retry, directly address previous acceptance issues.",
+		"- Treat artifact refs and briefs as pointers, not full evidence.",
+		"- Do not claim artifact-based evidence unless full artifact content or explicit evidence is provided.",
+		"- Return a concise final summary after using any required tools.",
 	].join("\n");
 }
 
@@ -111,14 +196,22 @@ export function createProfileWorkerRunner(options: CreateProfileWorkerRunnerOpti
 				systemPromptOverride: () => request.profile?.rolePrompt ?? "You are an academic profile worker.",
 			},
 		});
-		await session.prompt(buildPrompt(request));
+		await session.prompt(buildProfileWorkerPrompt(request));
 		const toolOutputs = extractLiteratureSearchToolOutputs(session.messages);
 		const producedArtifacts = toolOutputs.flatMap((output) => output.artifactRefs);
 		const warnings = toolOutputs.flatMap((output) => output.warnings);
+		const summary = latestAssistantText(session.messages) ?? "Profile worker completed.";
+		const status = inferProfileWorkerStatus({
+			request,
+			summary,
+			toolOutputs,
+			producedArtifacts,
+		});
+		const failureReason = failureReasonForProfileWorker(request, status);
 		return {
 			taskId: request.taskId,
-			status: producedArtifacts.length > 0 ? "success" : "failed",
-			summary: latestAssistantText(session.messages) ?? "Profile worker completed.",
+			status,
+			summary,
 			structuredOutputs: {
 				literatureSearchRuns: toolOutputs.map((output) => output.retrievalRunId),
 			},
@@ -135,10 +228,11 @@ export function createProfileWorkerRunner(options: CreateProfileWorkerRunnerOpti
 			),
 			warnings,
 			openQuestions:
-				producedArtifacts.length > 0 ? [] : [{ question: "No literature search artifact was produced." }],
+				status === "success"
+					? []
+					: [{ question: failureReason ?? "Profile worker did not produce a usable result." }],
 			executionTrace: createExecutionTrace(`profile-worker-${request.taskId}`),
-			failureReason:
-				producedArtifacts.length > 0 ? undefined : "Profile worker did not produce a literature artifact.",
+			failureReason,
 		};
 	};
 }

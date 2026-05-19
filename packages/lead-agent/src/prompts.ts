@@ -4,6 +4,8 @@
  * All prompt text lives here. Business logic (planning, dispatch, acceptance)
  * stays in index.ts. Runtime session wiring stays in the runner functions.
  */
+import type { ArtifactBrief, ArtifactRef } from "@mariozechner/pi-agent-contracts";
+import type { LeadConversationContext } from "./orchestration/lead-context.js";
 
 /**
  * System prompt establishing the lead agent's identity.
@@ -46,6 +48,42 @@ export interface LeadDirectMessageOptions {
 	expectedOutputs?: string[];
 }
 
+export interface BuildLeadDirectMessageOptions {
+	conversationContext?: LeadConversationContext;
+}
+
+function formatArtifacts(artifacts: readonly ArtifactRef[]): string {
+	if (artifacts.length === 0) {
+		return "none";
+	}
+	return artifacts.map((artifact) => `- ${artifact.id} (${artifact.kind})`).join("\n");
+}
+
+function formatArtifactBriefs(briefs: readonly ArtifactBrief[]): string {
+	if (briefs.length === 0) {
+		return "none";
+	}
+	return briefs.map((brief) => `- ${brief.artifactId} (${brief.kind}): ${brief.brief}`).join("\n");
+}
+
+function formatLeadConversationContext(context: LeadConversationContext | undefined): string | undefined {
+	if (!context) {
+		return undefined;
+	}
+	return [
+		"Lead Conversation Context:",
+		`Recent user objectives:\n${context.recentUserObjectives.length > 0 ? context.recentUserObjectives.map((value) => `- ${value}`).join("\n") : "none"}`,
+		`Recent lead outputs:\n${context.recentLeadOutputs.length > 0 ? context.recentLeadOutputs.map((value) => `- ${value}`).join("\n") : "none"}`,
+		`Prior artifacts:\n${formatArtifacts(context.priorArtifacts)}`,
+		`Artifact briefs:\n${formatArtifactBriefs(context.artifactBriefs)}`,
+		`Compaction summary:\n${context.compactionSummary ?? "none"}`,
+		"Context rules:",
+		"- Use prior context only when directly relevant.",
+		"- Treat artifact refs and briefs as pointers, not full artifact content.",
+		"- If the current request is unrelated to prior context, answer as a new task.",
+	].join("\n");
+}
+
 /**
  * Build the user-turn message for a direct lead-agent call.
  *
@@ -53,13 +91,20 @@ export interface LeadDirectMessageOptions {
  * The lead agent identity is established separately via LEAD_AGENT_SYSTEM_PROMPT as the
  * session system prompt, not mixed into the user message.
  */
-export function buildLeadDirectMessage(request: LeadDirectMessageOptions): string {
+export function buildLeadDirectMessage(
+	request: LeadDirectMessageOptions,
+	options: BuildLeadDirectMessageOptions = {},
+): string {
 	const parts: string[] = [request.objective];
 	if (request.constraints && request.constraints.length > 0) {
 		parts.push(`Constraints:\n${request.constraints.map((c) => `- ${c}`).join("\n")}`);
 	}
 	if (request.expectedOutputs && request.expectedOutputs.length > 0) {
 		parts.push(`Expected outputs:\n${request.expectedOutputs.map((o) => `- ${o}`).join("\n")}`);
+	}
+	const conversationContext = formatLeadConversationContext(options.conversationContext);
+	if (conversationContext) {
+		parts.push(conversationContext);
 	}
 	return parts.join("\n\n");
 }

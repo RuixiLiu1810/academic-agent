@@ -53,7 +53,9 @@ function handleCommand(line: string, state: InteractiveState, stdout: (text: str
 	const [command, ...parts] = line.slice(1).trim().split(/\s+/);
 	const value = parts.join(" ").trim();
 	if (command === "help") {
-		stdout("/settings\n/task-type <type>\n/profile <id>\n/expected-output <text>\n/session\n/exit\n");
+		stdout(
+			"/settings\n/task-type <type>\n/profile <id>\n/expected-output <text>\n/compact academic\n/session\n/exit\n",
+		);
 		return true;
 	}
 	if (command === "task-type") {
@@ -121,6 +123,15 @@ export async function runLeadInteractiveLoop(options: RunLeadInteractiveLoopOpti
 		if (line.startsWith("/")) {
 			if (line === "/settings" || line === "/setting") {
 				stdout(`${renderSettings(state, options.runtime.sessionManager.getSessionId())}\n`);
+				continue;
+			}
+			if (line === "/compact" || line === "/compact academic") {
+				try {
+					const compaction = options.runtime.compactAcademic("Manual interactive compaction.");
+					stdout(`${compaction.summary}\n`);
+				} catch (error) {
+					stderr(`${error instanceof Error ? error.message : String(error)}\n`);
+				}
 				continue;
 			}
 			const handled = handleCommand(line, state, stdout);

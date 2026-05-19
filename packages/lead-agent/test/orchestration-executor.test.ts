@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createExecutionTrace, type WorkerResult } from "@mariozechner/pi-agent-contracts";
+import { createExecutionTrace, type WorkerRequest, type WorkerResult } from "@mariozechner/pi-agent-contracts";
 import { createAcademicArtifact, MemoryArtifactStore } from "@mariozechner/pi-artifact-core";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_ACADEMIC_PROFILES } from "../src/index.js";
@@ -273,6 +273,186 @@ describe("executeWorkflowPlan", () => {
 			});
 
 			expect(seenRetrievedContent).toEqual(["I. Background\nII. Methods\nIII. Results"]);
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
+	});
+
+	it("passes previous acceptance issues into attemptContext on retry", async () => {
+		const cwd = mkdtempSync(join(tmpdir(), "lead-executor-attempt-context-"));
+		try {
+			const workspace = createLeadSessionWorkspace({ cwd, sessionId: "session-attempt-context" });
+			const workerRequests: WorkerRequest[] = [];
+			const result = await executeWorkflowPlan({
+				plan: {
+					taskId: "task-attempt-context",
+					sessionId: "session-attempt-context",
+					mode: "workflow",
+					objective: "Retry with acceptance feedback.",
+					rationale: "Exercise retry context.",
+					userVisibleSummary: "Run one retrying step.",
+					stopConditions: ["accepted"],
+					steps: [
+						{
+							id: "step-1",
+							order: 1,
+							profileId: "researcher",
+							objective: "Summarize the evidence.",
+							expectedArtifactKinds: [],
+							expectedOutputs: ["evidence summary"],
+							acceptanceCriteria: [],
+							inputArtifactRefs: [],
+						},
+					],
+				},
+				profiles: [
+					{
+						id: "researcher",
+						name: "Researcher",
+						description: "Research worker",
+						rolePrompt: "You are a researcher.",
+						capabilities: [],
+						expectedOutputs: [],
+						acceptanceChecklist: [],
+					},
+				],
+				workspace,
+				workerRunner: async (request): Promise<WorkerResult> => {
+					workerRequests.push(request);
+					return {
+						taskId: request.taskId,
+						status: "success",
+						summary: workerRequests.length === 1 ? "Incomplete response" : "evidence summary complete",
+						structuredOutputs: {},
+						producedArtifacts: [],
+						warnings: [],
+						openQuestions: [],
+						executionTrace: createExecutionTrace(`attempt-${workerRequests.length}`),
+					};
+				},
+			});
+
+			expect(result.accepted).toBe(true);
+			expect(workerRequests).toHaveLength(2);
+			expect(workerRequests[0]?.attemptContext?.attempt).toBe(1);
+			expect(workerRequests[0]?.attemptContext?.previousIssues).toBeUndefined();
+			expect(workerRequests[1]?.attemptContext?.attempt).toBe(2);
+			expect(workerRequests[1]?.attemptContext?.previousIssues?.[0]?.code).toBe("narrative_output_missing_token");
+			expect(workerRequests[1]?.attemptContext?.previousFailureReason).toContain("summary");
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
+	});
+
+	it("injects a bounded lead context package into worker requests", async () => {
+		const cwd = mkdtempSync(join(tmpdir(), "lead-executor-context-package-"));
+		try {
+			const workspace = createLeadSessionWorkspace({ cwd, sessionId: "session-context-package" });
+			const workerRequests: WorkerRequest[] = [];
+			await executeWorkflowPlan({
+				plan: {
+					taskId: "task-context-package",
+					sessionId: "session-context-package",
+					mode: "workflow",
+					objective: "Continue NIR synthesis.",
+					rationale: "Use prior literature results first, then synthesize.",
+					userVisibleSummary: "I will use the prior literature artifact.",
+					stopConditions: ["accepted"],
+					steps: [
+						{
+							id: "step-1",
+							order: 1,
+							profileId: "researcher",
+							objective: "Summarize prior literature candidates.",
+							expectedArtifactKinds: ["evidence-table"],
+							expectedOutputs: ["evidence summary"],
+							acceptanceCriteria: ["Summary mentions NIR"],
+							inputArtifactRefs: [
+								{ id: "prior-lit", kind: "literature-search-results", uri: "memory://prior-lit" },
+							],
+						},
+						{
+							id: "step-2",
+							order: 2,
+							profileId: "writer",
+							objective: "Write a short synthesis.",
+							expectedArtifactKinds: ["draft-text"],
+							expectedOutputs: ["draft text"],
+							acceptanceCriteria: ["Draft mentions NIR"],
+							inputArtifactRefs: [],
+						},
+					],
+				},
+				profiles: DEFAULT_ACADEMIC_PROFILES,
+				workspace,
+				conversationContext: {
+					sessionId: "session-context-package",
+					currentObjective: "Continue NIR synthesis.",
+					recentUserObjectives: ["Find NIR literature."],
+					recentLeadOutputs: ["Initial search completed."],
+					recentDecisions: [],
+					recentWorkflowResults: [
+						{
+							taskId: "task-previous",
+							accepted: true,
+							producedArtifactKinds: ["literature-search-results"],
+							issues: [],
+						},
+					],
+					priorArtifacts: [{ id: "prior-lit", kind: "literature-search-results", uri: "memory://prior-lit" }],
+					artifactBriefs: [
+						{
+							artifactId: "prior-lit",
+							kind: "literature-search-results",
+							brief: "NIR candidate bibliography.",
+						},
+					],
+					compactionSummary: "Previous work focused on NIR spectroscopy.",
+					budget: { maxChars: 12000, usedChars: 500, truncatedSections: [] },
+				},
+				workerRunner: async (request): Promise<WorkerResult> => {
+					workerRequests.push(request);
+					return {
+						taskId: request.taskId,
+						status: "success",
+						summary: request.workerType === "researcher" ? "NIR evidence summary" : "NIR draft text",
+						structuredOutputs: { expectedOutputs: request.expectedOutputs },
+						producedArtifacts: [
+							{
+								id: `${request.workerType}-artifact`,
+								kind: request.workerType === "researcher" ? "evidence-table" : "draft-text",
+								uri: `memory://${request.workerType}-artifact`,
+							},
+						],
+						artifactBriefs: [
+							{
+								artifactId: `${request.workerType}-artifact`,
+								kind: request.workerType === "researcher" ? "evidence-table" : "draft-text",
+								brief: `${request.workerType} brief`,
+							},
+						],
+						warnings: [],
+						openQuestions: [],
+						executionTrace: createExecutionTrace(`context-package-${request.workerType}`),
+					};
+				},
+			});
+
+			const firstPackage = workerRequests[0]?.metadata?.leadContextPackage;
+			expect(firstPackage).toMatchObject({
+				currentObjective: "Continue NIR synthesis.",
+				currentStepObjective: "Summarize prior literature candidates.",
+				allowedArtifactIds: ["prior-lit"],
+				compactionSummary: "Previous work focused on NIR spectroscopy.",
+			});
+			expect(firstPackage).toMatchObject({
+				relevantPriorObjectives: ["Find NIR literature."],
+			});
+			const secondPackage = workerRequests[1]?.metadata?.leadContextPackage;
+			expect(secondPackage).toMatchObject({
+				allowedArtifactIds: ["researcher-artifact"],
+			});
+			expect(JSON.stringify(secondPackage)).toContain("researcher brief");
 		} finally {
 			rmSync(cwd, { recursive: true, force: true });
 		}

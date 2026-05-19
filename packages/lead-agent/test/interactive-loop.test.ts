@@ -3,6 +3,21 @@ import { describe, expect, it } from "vitest";
 import { createLeadAgentRuntime } from "../src/index.js";
 import { runLeadInteractiveLoop } from "../src/modes/interactive-loop.js";
 
+const zeroUsage = {
+	input: 0,
+	output: 0,
+	cacheRead: 0,
+	cacheWrite: 0,
+	totalTokens: 0,
+	cost: {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+		total: 0,
+	},
+};
+
 describe("runLeadInteractiveLoop", () => {
 	it("runs repeated prompts and exits on /exit", async () => {
 		const stdout: string[] = [];
@@ -91,5 +106,44 @@ describe("runLeadInteractiveLoop", () => {
 		expect(output).toContain("task-type:        research");
 		expect(output).toContain("profile:          researcher");
 		expect(output).toContain("expected-outputs: evidence-table");
+	});
+
+	it("runs manual academic compaction through slash command", async () => {
+		const stdout: string[] = [];
+		const stderr: string[] = [];
+		const runtime = createLeadAgentRuntime({
+			directRunner: async () => {
+				throw new Error("direct should not run");
+			},
+			workerRunner: async () => {
+				throw new Error("worker should not run");
+			},
+		});
+		runtime.sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "Summarize NIR." }],
+			timestamp: Date.now(),
+		});
+		runtime.sessionManager.appendMessage({
+			role: "assistant",
+			content: [{ type: "text", text: "Direct academic output." }],
+			api: "lead-agent",
+			provider: "lead-agent",
+			model: "lead-agent-synthesis",
+			timestamp: Date.now(),
+			usage: zeroUsage,
+			stopReason: "stop",
+		});
+
+		const exitCode = await runLeadInteractiveLoop({
+			runtime,
+			inputs: ["/compact academic", "/exit"],
+			stdout: (text) => stdout.push(text),
+			stderr: (text) => stderr.push(text),
+		});
+
+		expect(exitCode).toBe(0);
+		expect(stderr).toEqual([]);
+		expect(stdout.join("")).toContain("Academic working memory compacted.");
 	});
 });
