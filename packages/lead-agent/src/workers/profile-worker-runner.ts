@@ -141,6 +141,50 @@ function formatAttemptContext(request: WorkerRequest): string {
 	].join("\n");
 }
 
+function formatLiteratureToolUseRequirements(request: WorkerRequest): string {
+	if (!requiresLiteratureArtifact(request)) {
+		return "none";
+	}
+	return [
+		"- The user has already requested literature retrieval.",
+		"- Do not ask whether to run the search.",
+		"- You must call literature.search before the final answer.",
+		"- If parameters are missing, choose reasonable defaults.",
+		"- Provider failures should be warnings/retrieval gaps, not blocking questions.",
+	].join("\n");
+}
+
+function issueMentionsMissingLiteratureArtifact(request: WorkerRequest): boolean {
+	const attempt = request.attemptContext;
+	if (!attempt) {
+		return false;
+	}
+	const text = [
+		attempt.previousFailureReason ?? "",
+		...(attempt.previousIssues ?? []).flatMap((issue) => [issue.code, issue.message]),
+	]
+		.join("\n")
+		.toLowerCase();
+	return (
+		text.includes("literature-search-results") ||
+		text.includes("literature artifact") ||
+		text.includes("artifact_missing") ||
+		text.includes("worker_failed")
+	);
+}
+
+function formatLiteratureRetryInstructions(request: WorkerRequest): string {
+	if (!requiresLiteratureArtifact(request) || !issueMentionsMissingLiteratureArtifact(request)) {
+		return "none";
+	}
+	return [
+		"- Previous attempt failed because no literature-search-results artifact was produced.",
+		"- Call literature.search now.",
+		"- Do not answer with only a search strategy.",
+		"- Do not ask for confirmation.",
+	].join("\n");
+}
+
 export function buildProfileWorkerPrompt(request: WorkerRequest): string {
 	return [
 		request.profile?.rolePrompt ?? request.objective,
@@ -153,6 +197,12 @@ export function buildProfileWorkerPrompt(request: WorkerRequest): string {
 		"",
 		"## Attempt Context",
 		formatAttemptContext(request),
+		"",
+		"## Tool Use Requirements",
+		formatLiteratureToolUseRequirements(request),
+		"",
+		"## Retry Repair Instructions",
+		formatLiteratureRetryInstructions(request),
 		"",
 		"## Lead Context Package",
 		formatWorkerContextPackageFromMetadata(request.metadata),
