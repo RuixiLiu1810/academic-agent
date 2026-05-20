@@ -32,7 +32,7 @@ function normalizeOutputLabel(value: string): string {
 
 function requiresArtifactRef(expectedOutput: string): boolean {
 	const normalized = normalizeOutputLabel(expectedOutput);
-	return normalized === "literaturesearchresults" || normalized === "bibliographycandidates";
+	return normalized === "literaturesearchresults";
 }
 
 function textIncludesExpected(text: string, expected: string): boolean {
