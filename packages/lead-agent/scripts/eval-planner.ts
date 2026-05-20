@@ -309,15 +309,57 @@ async function main(): Promise<void> {
 		renderPlan(plan as PlanShape);
 	} catch (e) {
 		if (e instanceof PlannerValidationError) {
-			process.stderr.write(chalk.red.bold("\nPlanner failed after repair attempt.\n\n"));
-			process.stderr.write(chalk.bold("First errors:\n"));
-			for (const err of e.firstErrors) process.stderr.write("  " + chalk.red("✗ ") + err + "\n");
-			process.stderr.write(chalk.bold("\nSecond errors:\n"));
-			for (const err of e.secondErrors) process.stderr.write("  " + chalk.red("✗ ") + err + "\n");
-			if (e.firstPlan) {
-				process.stderr.write(chalk.bold("\nFirst plan attempt:\n"));
-				process.stderr.write(chalk.gray(JSON.stringify(e.firstPlan, null, 2)) + "\n");
+			const dt = e.debugTrace;
+			const thin = chalk.gray("─".repeat(64));
+
+			process.stderr.write(chalk.red.bold("\n  PLANNER FAILED\n"));
+			process.stderr.write(thin + "\n");
+
+			if (dt) {
+				process.stderr.write(chalk.bold("  model          ") + chalk.cyan(`${dt.modelProvider}/${dt.modelId}`) + "\n");
+				process.stderr.write(chalk.bold("  finalReason    ") + chalk.red(dt.finalFailureReason) + "\n");
+				process.stderr.write(chalk.bold("  repairAttempted") + " " + (e.repairAttempted ? chalk.yellow("true") : chalk.gray("false")) + "\n");
+				process.stderr.write("\n");
+
+				for (const call of dt.calls) {
+					process.stderr.write(chalk.bold(`  [${call.attempt}]\n`));
+					process.stderr.write(`    modelCallStarted : ${call.modelCallStarted}\n`);
+					process.stderr.write(`    stopReason       : ${call.stopReason ?? "(none)"}\n`);
+					process.stderr.write(`    toolCallCount    : ${call.toolCallCount}\n`);
+					process.stderr.write(`    toolCallNames    : [${call.toolCallNames.join(", ")}]\n`);
+					process.stderr.write(`    failureReason    : ${chalk.yellow(call.failureReason)}\n`);
+					if (call.rawTextPreview) {
+						process.stderr.write(`    rawText(200)     : ${chalk.gray(call.rawTextPreview)}\n`);
+					}
+					if (call.rawToolArgsPreview) {
+						process.stderr.write(`    toolArgs(300)    : ${chalk.gray(call.rawToolArgsPreview)}\n`);
+					}
+					if (call.parsedPlanPreview) {
+						process.stderr.write(`    parsedPlan(300)  : ${chalk.gray(call.parsedPlanPreview)}\n`);
+					}
+					if (call.validationErrors.length > 0) {
+						process.stderr.write(`    validationErrors :\n`);
+						for (const ve of call.validationErrors) {
+							process.stderr.write(`      ✗ ${chalk.red(ve)}\n`);
+						}
+					}
+					process.stderr.write("\n");
+				}
+
+				process.stderr.write(thin + "\n");
+				process.stderr.write(chalk.bold("  firstErrors\n"));
+				for (const err of e.firstErrors) process.stderr.write("    " + chalk.red("✗ ") + err + "\n");
+				process.stderr.write(chalk.bold("  secondErrors\n"));
+				for (const err of e.secondErrors) process.stderr.write("    " + chalk.red("✗ ") + err + "\n");
+			} else {
+				// legacy (no debugTrace)
+				process.stderr.write(chalk.bold("  firstErrors\n"));
+				for (const err of e.firstErrors) process.stderr.write("    " + chalk.red("✗ ") + err + "\n");
+				process.stderr.write(chalk.bold("  secondErrors\n"));
+				for (const err of e.secondErrors) process.stderr.write("    " + chalk.red("✗ ") + err + "\n");
 			}
+
+			process.stderr.write("\n");
 			process.exit(1);
 		}
 		throw e;
