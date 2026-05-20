@@ -10,6 +10,7 @@ import type { ToolDefinition } from "@mariozechner/pi-agent-host/extensions";
 import type { ToolResultMessage } from "@mariozechner/pi-ai";
 import type { ArtifactStore } from "@mariozechner/pi-artifact-core";
 import type { LiteratureSearchToolOutput } from "../literature/types.js";
+import type { WorkflowExecutionEvent } from "../orchestration/executor.js";
 import type { LeadAgentWorkerRunner } from "../orchestration/types.js";
 import { formatWorkerContextPackageFromMetadata } from "../orchestration/worker-context.js";
 
@@ -19,6 +20,7 @@ export interface CreateProfileWorkerRunnerOptions {
 	cwd: string;
 	store: ArtifactStore;
 	toolDefinitions: readonly ProfileToolDefinition[];
+	onEvent?: (event: WorkflowExecutionEvent) => void;
 }
 
 function failedResult(request: WorkerRequest, reason: string): WorkerResult {
@@ -51,6 +53,57 @@ function isLiteratureSearchToolOutput(value: unknown): value is LiteratureSearch
 		Array.isArray(value.candidatesPreview) &&
 		Array.isArray(value.warnings)
 	);
+}
+
+function stringFromRecord(value: Record<string, unknown>, key: string): string | undefined {
+	const entry = value[key];
+	return typeof entry === "string" ? entry : undefined;
+}
+
+function numberFromRecord(value: Record<string, unknown>, key: string): number | undefined {
+	const entry = value[key];
+	return typeof entry === "number" ? entry : undefined;
+}
+
+function literatureEventFromProgress(request: WorkerRequest, details: unknown): WorkflowExecutionEvent | undefined {
+	if (!isRecord(details) || typeof details.stage !== "string" || !details.stage.startsWith("literature_")) {
+		return undefined;
+	}
+	const type = details.stage;
+	if (
+		type !== "literature_search_start" &&
+		type !== "literature_provider_start" &&
+		type !== "literature_provider_complete" &&
+		type !== "literature_candidates_ranked" &&
+		type !== "literature_artifact_created" &&
+		type !== "literature_search_complete"
+	) {
+		return undefined;
+	}
+	const status = details.status === "success" || details.status === "failed" ? details.status : undefined;
+	return {
+		type,
+		taskId: request.taskId,
+		profileId: request.profile?.id ?? request.workerType,
+		workerType: request.workerType,
+		provider: stringFromRecord(details, "provider"),
+		status,
+		query: stringFromRecord(details, "query"),
+		candidateCount: numberFromRecord(details, "candidateCount"),
+		warningCount: numberFromRecord(details, "warningCount"),
+		error: stringFromRecord(details, "error"),
+		artifactId: stringFromRecord(details, "artifactId"),
+		artifactKind: stringFromRecord(details, "artifactKind"),
+		artifactCount: numberFromRecord(details, "artifactCount"),
+	};
+}
+
+function artifactKindsFromToolResult(result: unknown): string[] {
+	const details = isRecord(result) ? result.details : undefined;
+	if (!isLiteratureSearchToolOutput(details)) {
+		return [];
+	}
+	return details.artifactRefs.map((artifact) => artifact.kind);
 }
 
 export function extractLiteratureSearchToolOutputs(messages: readonly unknown[]): LiteratureSearchToolOutput[] {
@@ -246,7 +299,40 @@ export function createProfileWorkerRunner(options: CreateProfileWorkerRunnerOpti
 				systemPromptOverride: () => request.profile?.rolePrompt ?? "You are an academic profile worker.",
 			},
 		});
-		await session.prompt(buildProfileWorkerPrompt(request));
+		const unsubscribe = session.subscribe((event) => {
+			if (event.type === "tool_execution_start") {
+				options.onEvent?.({
+					type: "tool_call_start",
+					taskId: request.taskId,
+					profileId: request.profile?.id ?? request.workerType,
+					workerType: request.workerType,
+					toolCallId: event.toolCallId,
+					toolName: event.toolName,
+				});
+			} else if (event.type === "tool_execution_update") {
+				const details = isRecord(event.partialResult) ? event.partialResult.details : undefined;
+				const literatureEvent = literatureEventFromProgress(request, details);
+				if (literatureEvent) {
+					options.onEvent?.(literatureEvent);
+				}
+			} else if (event.type === "tool_execution_end") {
+				options.onEvent?.({
+					type: "tool_call_complete",
+					taskId: request.taskId,
+					profileId: request.profile?.id ?? request.workerType,
+					workerType: request.workerType,
+					toolCallId: event.toolCallId,
+					toolName: event.toolName,
+					isError: event.isError,
+					producedArtifactKinds: artifactKindsFromToolResult(event.result),
+				});
+			}
+		});
+		try {
+			await session.prompt(buildProfileWorkerPrompt(request));
+		} finally {
+			unsubscribe();
+		}
 		const toolOutputs = extractLiteratureSearchToolOutputs(session.messages);
 		const producedArtifacts = toolOutputs.flatMap((output) => output.artifactRefs);
 		const warnings = toolOutputs.flatMap((output) => output.warnings);

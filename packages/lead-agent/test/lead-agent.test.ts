@@ -455,11 +455,9 @@ Use the custom audit role.
 			}) as never,
 		} as LeadAgentTaskRequest & { onEvent: (event: { type: string }) => void });
 
-		expect(events.map((event) => event.type)).toEqual([
-			"plan_summary",
-			"workflow_step_start",
-			"workflow_step_complete",
-		]);
+		expect(events.map((event) => event.type)).toEqual(
+			expect.arrayContaining(["plan_summary", "workflow_step_start", "workflow_step_complete"]),
+		);
 	});
 
 	it("records a planner override event when an explicit profile forces fallback planning", async () => {

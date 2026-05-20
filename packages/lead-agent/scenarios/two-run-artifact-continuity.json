@@ -1,0 +1,26 @@
+{
+	"id": "two-run-artifact-continuity",
+	"title": "two-run artifact continuity",
+	"runs": [
+		{
+			"input": "帮我找一型糖尿病最近研究的文献"
+		},
+		{
+			"input": "继续总结刚才那批文献"
+		}
+	],
+	"setup": {
+		"mockWorker": "literature-success"
+	},
+	"expect": {
+		"artifacts": {
+			"includeKinds": ["literature-search-results"]
+		},
+		"events": {
+			"include": ["artifact_created", "session_memory_updated"]
+		},
+		"memory": {
+			"availableArtifactRefsIncludePreviousRun": true
+		}
+	}
+}

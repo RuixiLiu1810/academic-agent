@@ -1,0 +1,21 @@
+{
+	"id": "provider-failure-warning",
+	"title": "provider failure as warning/retrieval gap",
+	"input": "帮我检索近五年 RLRL 治疗儿童近视的研究",
+	"setup": {
+		"mockProvider": "failure"
+	},
+	"expect": {
+		"mode": "workflow",
+		"profiles": {
+			"include": ["literature-searcher"]
+		},
+		"events": {
+			"include": ["literature_provider_complete", "synthesis_complete"]
+		},
+		"finalOutput": {
+			"mustIncludeAny": ["provider", "warning", "retrieval gap", "检索缺口", "limitations"],
+			"mustNotInclude": ["What is the target application", "是否现在执行"]
+		}
+	}
+}

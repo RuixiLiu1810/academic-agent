@@ -55,6 +55,31 @@ export interface CreateLiteratureSearchToolOptions {
 	policy?: LiteratureSearchToolPolicy;
 }
 
+type LiteratureSearchProgressDetails =
+	| { stage: "literature_search_start"; query: string; providers: string[]; maxResults: number }
+	| { stage: "literature_provider_start"; provider: string }
+	| {
+			stage: "literature_provider_complete";
+			provider: string;
+			status: "success" | "failed";
+			candidateCount: number;
+			warningCount: number;
+			error?: string;
+	  }
+	| { stage: "literature_candidates_ranked"; candidateCount: number }
+	| { stage: "literature_artifact_created"; artifactId: string; artifactKind: string; title?: string }
+	| { stage: "literature_search_complete"; artifactCount: number; warningCount: number; candidateCount: number };
+
+function emitProgress(
+	onUpdate: Parameters<ToolDefinition<typeof literatureSearchSchema, LiteratureSearchToolOutput>["execute"]>[3],
+	details: LiteratureSearchProgressDetails,
+): void {
+	onUpdate?.({
+		content: [],
+		details: details as unknown as LiteratureSearchToolOutput,
+	});
+}
+
 function isLiteratureProviderId(value: string): value is LiteratureProviderId {
 	return providerIds.includes(value as LiteratureProviderId);
 }
@@ -144,7 +169,7 @@ export function createLiteratureSearchTool(
 			"Do not invent citations or retrieved papers.",
 			"Summarize provider coverage and limitations.",
 		],
-		async execute(_toolCallId, params) {
+		async execute(_toolCallId, params, _signal, onUpdate) {
 			const input = params as LiteratureSearchToolInput;
 			callCount += 1;
 			if (policy.maxCalls !== undefined && callCount > policy.maxCalls) {
@@ -159,10 +184,22 @@ export function createLiteratureSearchTool(
 			}
 			const policyMaxResults = policy.maxResultsPerProvider ?? 10;
 			const maxResults = Math.min(input.maxResults ?? policyMaxResults, policyMaxResults);
+			emitProgress(onUpdate, {
+				stage: "literature_search_start",
+				query: input.query,
+				providers,
+				maxResults,
+			});
 			const cacheKey = stableCacheKey(input, providers, maxResults);
 			if (input.refresh !== true) {
 				const cached = cachedOutput(options.store, cacheKey);
 				if (cached) {
+					emitProgress(onUpdate, {
+						stage: "literature_search_complete",
+						artifactCount: cached.artifactRefs.length,
+						warningCount: cached.warnings.length,
+						candidateCount: cached.candidatesPreview.length,
+					});
 					return {
 						content: [
 							{
@@ -175,8 +212,12 @@ export function createLiteratureSearchTool(
 				}
 			}
 			const runs = await Promise.all(
-				providers.map((provider) =>
-					registry.search(provider, {
+				providers.map(async (provider) => {
+					emitProgress(onUpdate, {
+						stage: "literature_provider_start",
+						provider,
+					});
+					const run = await registry.search(provider, {
 						query: input.query,
 						maxResults,
 						fromYear: input.fromYear,
@@ -184,13 +225,37 @@ export function createLiteratureSearchTool(
 						fieldOfStudy: input.fieldOfStudy,
 						includePreprints: input.includePreprints,
 						includeBiomedical: input.includeBiomedical,
-					}),
-				),
+					});
+					emitProgress(
+						onUpdate,
+						"result" in run
+							? {
+									stage: "literature_provider_complete",
+									provider,
+									status: "success",
+									candidateCount: run.result.candidates.length,
+									warningCount: run.result.warnings.length,
+								}
+							: {
+									stage: "literature_provider_complete",
+									provider,
+									status: "failed",
+									candidateCount: 0,
+									warningCount: 0,
+									error: run.error,
+								},
+					);
+					return run;
+				}),
 			);
 			const candidates = dedupeAndRankCandidates(
 				runs.flatMap((run) => ("result" in run ? run.result.candidates : [])),
 				{ query: input.query },
 			);
+			emitProgress(onUpdate, {
+				stage: "literature_candidates_ranked",
+				candidateCount: candidates.length,
+			});
 			const warnings = runs.flatMap((run) =>
 				"result" in run ? run.result.warnings : [`${run.provider}: ${run.error}`],
 			);
@@ -231,6 +296,12 @@ export function createLiteratureSearchTool(
 					...providerMetadata(providers),
 				},
 			});
+			emitProgress(onUpdate, {
+				stage: "literature_artifact_created",
+				artifactId: artifact.id,
+				artifactKind: artifact.kind,
+				title: artifact.title,
+			});
 			const output: LiteratureSearchToolOutput = {
 				retrievalRunId,
 				providers: providerSummaries,
@@ -245,6 +316,12 @@ export function createLiteratureSearchTool(
 			if (policy.requireArtifactOutput === true && output.artifactRefs.length === 0) {
 				throw new Error("Literature search did not produce an artifact.");
 			}
+			emitProgress(onUpdate, {
+				stage: "literature_search_complete",
+				artifactCount: output.artifactRefs.length,
+				warningCount: output.warnings.length,
+				candidateCount: output.candidatesPreview.length,
+			});
 			const brief = artifactBriefFor(output);
 			return {
 				content: [{ type: "text", text: `${brief.brief}\nArtifact: ${output.artifactRefs[0]?.id ?? "(none)"}` }],

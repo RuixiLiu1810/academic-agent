@@ -1,0 +1,26 @@
+{
+	"id": "workflow-event-order",
+	"title": "workflow event order",
+	"input": "帮我找NIR相关文献",
+	"setup": {
+		"mockWorker": "literature-tool-success"
+	},
+	"expect": {
+		"events": {
+			"includeOrdered": [
+				"planner_start",
+				"planner_complete",
+				"workflow_start",
+				"workflow_step_start",
+				"worker_start",
+				"tool_call_start",
+				"tool_call_complete",
+				"artifact_created",
+				"acceptance_complete",
+				"synthesis_start",
+				"synthesis_complete",
+				"session_memory_updated"
+			]
+		}
+	}
+}

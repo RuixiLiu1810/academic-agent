@@ -1,0 +1,17 @@
+{
+	"id": "forced-direct-lifecycle",
+	"title": "forced direct lifecycle",
+	"input": "解释一下阅读框是什么",
+	"requestOptions": {
+		"dispatchMode": "direct"
+	},
+	"expect": {
+		"mode": "direct",
+		"events": {
+			"include": ["synthesis_start", "synthesis_complete", "session_memory_updated"]
+		},
+		"session": {
+			"noDuplicateUserAssistantMessages": true
+		}
+	}
+}

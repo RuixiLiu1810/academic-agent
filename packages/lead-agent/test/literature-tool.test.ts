@@ -69,6 +69,71 @@ describe("literature.search tool", () => {
 		expect(result.content[0]).toMatchObject({ type: "text" });
 	});
 
+	it("emits provider-level progress updates without large candidate payloads", async () => {
+		const store = new FileSystemArtifactStore(makeTempDir());
+		const updates: unknown[] = [];
+		const provider: LiteratureSearchProvider = {
+			id: "crossref",
+			async search(request) {
+				return {
+					provider: "crossref",
+					warnings: ["metadata only"],
+					candidates: [
+						{
+							id: "crossref-1",
+							provider: "crossref",
+							providerRecordId: "10.1000/nir",
+							title: "Near infrared spectroscopy for diagnosis",
+							authors: ["A. Author"],
+							year: 2024,
+							doi: "10.1000/nir",
+							sourceQuery: request.query,
+							retrievedAt: "2026-05-17T00:00:00.000Z",
+						},
+					],
+				};
+			},
+		};
+		const tool = createLiteratureSearchTool({
+			store,
+			providers: [provider],
+			policy: {
+				allowedProviders: ["crossref"],
+				defaultProviders: ["crossref"],
+				maxResultsPerProvider: 5,
+				requireArtifactOutput: true,
+			},
+		});
+
+		await tool.execute(
+			"tool-call-progress",
+			{ query: "near infrared diagnosis" },
+			undefined,
+			(update) => updates.push(update.details),
+			undefined as never,
+		);
+
+		expect(updates).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ stage: "literature_search_start", query: "near infrared diagnosis" }),
+				expect.objectContaining({ stage: "literature_provider_start", provider: "crossref" }),
+				expect.objectContaining({
+					stage: "literature_provider_complete",
+					provider: "crossref",
+					status: "success",
+					candidateCount: 1,
+				}),
+				expect.objectContaining({ stage: "literature_candidates_ranked", candidateCount: 1 }),
+				expect.objectContaining({
+					stage: "literature_artifact_created",
+					artifactKind: "literature-search-results",
+				}),
+				expect.objectContaining({ stage: "literature_search_complete", artifactCount: 1 }),
+			]),
+		);
+		expect(JSON.stringify(updates)).not.toContain("Near infrared spectroscopy for diagnosis");
+	});
+
 	it("rejects disallowed providers and refresh attempts", async () => {
 		const store = new FileSystemArtifactStore(makeTempDir());
 		const provider: LiteratureSearchProvider = {

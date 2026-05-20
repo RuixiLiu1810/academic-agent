@@ -1,0 +1,20 @@
+{
+	"id": "placeholder-marker-not-leaked",
+	"title": "placeholder marker 不泄漏",
+	"input": "根据已有资料整理一个研究证据摘要",
+	"setup": {
+		"mockWorker": "structured-placeholder"
+	},
+	"expect": {
+		"mode": "workflow",
+		"profiles": {
+			"include": ["researcher"]
+		},
+		"finalOutput": {
+			"mustNotInclude": ["runnerMode: placeholder-structured-runner", "modelBacked: false", "verificationRequired: true"]
+		},
+		"trace": {
+			"structuredOutputsInclude": ["placeholder-structured-runner"]
+		}
+	}
+}

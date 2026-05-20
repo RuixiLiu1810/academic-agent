@@ -30,19 +30,133 @@ export interface ExecuteWorkflowPlanOptions {
 	conversationContext?: LeadConversationContext;
 }
 
-export interface WorkflowExecutionEvent {
-	type: "workflow_step_start" | "workflow_step_retry" | "workflow_step_complete";
-	taskId: string;
-	stepId: string;
-	profileId: string;
-	order: number;
-	totalSteps: number;
-	attempt: number;
-	message: string;
-	accepted?: boolean;
-	decision?: WorkflowStepResult["decision"]["kind"];
-	question?: string;
-}
+export type WorkflowExecutionEvent =
+	| {
+			type: "workflow_start";
+			taskId: string;
+			sessionId: string;
+			stepCount: number;
+			stepProfiles: string[];
+	  }
+	| {
+			type: "workflow_complete";
+			taskId: string;
+			sessionId: string;
+			accepted: boolean;
+			stepCount: number;
+			producedArtifactKinds: string[];
+	  }
+	| {
+			type: "workflow_step_start" | "workflow_step_retry";
+			taskId: string;
+			stepId: string;
+			profileId: string;
+			order: number;
+			totalSteps: number;
+			attempt: number;
+			message: string;
+	  }
+	| {
+			type: "workflow_step_complete";
+			taskId: string;
+			stepId: string;
+			profileId: string;
+			order: number;
+			totalSteps: number;
+			attempt: number;
+			message: string;
+			accepted: boolean;
+			decision: WorkflowStepResult["decision"]["kind"];
+			question?: string;
+			producedArtifactKinds: string[];
+			issueCounts: IssueCounts;
+	  }
+	| {
+			type: "worker_start";
+			taskId: string;
+			stepId: string;
+			profileId: string;
+			workerType: string;
+			attempt: number;
+	  }
+	| {
+			type: "worker_complete";
+			taskId: string;
+			stepId: string;
+			profileId: string;
+			workerType: string;
+			attempt: number;
+			status: WorkerResult["status"];
+			runnerMode?: string;
+			producedArtifactKinds: string[];
+	  }
+	| {
+			type: "tool_call_start";
+			taskId: string;
+			profileId: string;
+			workerType: string;
+			toolCallId: string;
+			toolName: string;
+	  }
+	| {
+			type: "tool_call_complete";
+			taskId: string;
+			profileId: string;
+			workerType: string;
+			toolCallId: string;
+			toolName: string;
+			isError: boolean;
+			producedArtifactKinds: string[];
+	  }
+	| {
+			type:
+				| "literature_search_start"
+				| "literature_provider_start"
+				| "literature_provider_complete"
+				| "literature_candidates_ranked"
+				| "literature_artifact_created"
+				| "literature_search_complete";
+			taskId: string;
+			profileId: string;
+			workerType: string;
+			provider?: string;
+			status?: "success" | "failed";
+			query?: string;
+			candidateCount?: number;
+			warningCount?: number;
+			error?: string;
+			artifactId?: string;
+			artifactKind?: string;
+			artifactCount?: number;
+	  }
+	| {
+			type: "artifact_created";
+			taskId: string;
+			stepId: string;
+			profileId: string;
+			artifactId: string;
+			artifactKind: string;
+			title?: string;
+	  }
+	| {
+			type: "acceptance_start";
+			taskId: string;
+			stepId: string;
+			profileId: string;
+			attempt: number;
+	  }
+	| {
+			type: "acceptance_complete";
+			taskId: string;
+			stepId: string;
+			profileId: string;
+			attempt: number;
+			accepted: boolean;
+			issueCount: number;
+			errorCount: number;
+			warningCount: number;
+			issueCodesPreview: string[];
+	  };
 
 export interface WorkflowExecutionResult {
 	taskId: string;
@@ -56,6 +170,13 @@ export interface WorkflowExecutionResult {
 
 const DEFAULT_RETRY_ATTEMPTS = 2;
 const MAX_RETRIEVAL_CHARS = 4000;
+
+interface IssueCounts {
+	total: number;
+	error: number;
+	warning: number;
+	info: number;
+}
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
@@ -145,6 +266,32 @@ function questionForWorkerResult(workerResult: WorkerResult): string | undefined
 	return workerResult.openQuestions.find((q) => q.blocksExecution === true)?.question;
 }
 
+function issueCounts(report: AcceptanceReport): IssueCounts {
+	return {
+		total: report.issues.length,
+		error: report.issues.filter((issue) => issue.severity === "error").length,
+		warning: report.issues.filter((issue) => issue.severity === "warning").length,
+		info: report.issues.filter((issue) => issue.severity === "info").length,
+	};
+}
+
+function runnerModeFor(workerResult: WorkerResult): string | undefined {
+	const structured = workerResult.structuredOutputs;
+	if (structured && typeof structured === "object" && !Array.isArray(structured)) {
+		const runnerMode = structured.runnerMode;
+		if (typeof runnerMode === "string") {
+			return runnerMode;
+		}
+	}
+	for (const artifact of workerResult.producedArtifacts) {
+		const runnerMode = artifact.metadata?.runnerMode;
+		if (typeof runnerMode === "string") {
+			return runnerMode;
+		}
+	}
+	return undefined;
+}
+
 function retrievedArtifactsForInput(
 	inputArtifacts: readonly ArtifactRef[],
 	artifactStore: Pick<ArtifactStore, "get"> | undefined,
@@ -182,6 +329,13 @@ export async function executeWorkflowPlan(options: ExecuteWorkflowPlanOptions): 
 		taskId: plan.taskId,
 		sessionId: plan.sessionId,
 		stepCount: plan.steps.length,
+	});
+	options.onEvent?.({
+		type: "workflow_start",
+		taskId: plan.taskId,
+		sessionId: plan.sessionId,
+		stepCount: plan.steps.length,
+		stepProfiles: [...plan.steps].sort((a, b) => a.order - b.order).map((step) => step.profileId),
 	});
 
 	const orderedSteps = [...plan.steps].sort((a, b) => a.order - b.order);
@@ -247,14 +401,63 @@ export async function executeWorkflowPlan(options: ExecuteWorkflowPlanOptions): 
 				attempt,
 				message: `Step ${step.order}/${orderedSteps.length}: ${step.profileId}`,
 			});
+			options.onEvent?.({
+				type: "worker_start",
+				taskId: plan.taskId,
+				stepId: step.id,
+				profileId: step.profileId,
+				workerType: attemptWorkerRequest.workerType,
+				attempt,
+			});
 			try {
 				workerResult = await workerRunner(attemptWorkerRequest);
 			} catch (error) {
 				workerResult = createFailedWorkerResult(workerRequest.taskId, plan.sessionId, error);
 			}
+			options.onEvent?.({
+				type: "worker_complete",
+				taskId: plan.taskId,
+				stepId: step.id,
+				profileId: step.profileId,
+				workerType: attemptWorkerRequest.workerType,
+				attempt,
+				status: workerResult.status,
+				runnerMode: runnerModeFor(workerResult),
+				producedArtifactKinds: workerResult.producedArtifacts.map((artifact) => artifact.kind),
+			});
+			for (const artifact of workerResult.producedArtifacts) {
+				options.onEvent?.({
+					type: "artifact_created",
+					taskId: plan.taskId,
+					stepId: step.id,
+					profileId: step.profileId,
+					artifactId: artifact.id,
+					artifactKind: artifact.kind,
+					title: artifact.title,
+				});
+			}
 
+			options.onEvent?.({
+				type: "acceptance_start",
+				taskId: plan.taskId,
+				stepId: step.id,
+				profileId: step.profileId,
+				attempt,
+			});
 			acceptanceReport = createLeadAcceptanceReport(attemptWorkerRequest, workerResult, {
 				artifactStore: options.artifactStore,
+			});
+			options.onEvent?.({
+				type: "acceptance_complete",
+				taskId: plan.taskId,
+				stepId: step.id,
+				profileId: step.profileId,
+				attempt,
+				accepted: acceptanceReport.accepted,
+				issueCount: acceptanceReport.issues.length,
+				errorCount: acceptanceReport.issues.filter((issue) => issue.severity === "error").length,
+				warningCount: acceptanceReport.issues.filter((issue) => issue.severity === "warning").length,
+				issueCodesPreview: acceptanceReport.issues.map((issue) => issue.code).slice(0, 8),
 			});
 			if (acceptanceReport.accepted || hasBlockingOpenQuestion(workerResult) || attempt >= maxAttempts) {
 				break;
@@ -333,6 +536,8 @@ export async function executeWorkflowPlan(options: ExecuteWorkflowPlanOptions): 
 			accepted: acceptanceReport.accepted,
 			decision: decision.kind,
 			question: decision.question,
+			producedArtifactKinds: workerResult.producedArtifacts.map((artifact) => artifact.kind),
+			issueCounts: issueCounts(acceptanceReport),
 		});
 
 		if (!acceptanceReport.accepted || decision.kind === "ask_user") {
@@ -346,6 +551,14 @@ export async function executeWorkflowPlan(options: ExecuteWorkflowPlanOptions): 
 		taskId: plan.taskId,
 		accepted,
 		stepCount: stepResults.length,
+	});
+	options.onEvent?.({
+		type: "workflow_complete",
+		taskId: plan.taskId,
+		sessionId: plan.sessionId,
+		accepted,
+		stepCount: stepResults.length,
+		producedArtifactKinds: carriedArtifacts.map((artifact) => artifact.kind),
 	});
 
 	return {

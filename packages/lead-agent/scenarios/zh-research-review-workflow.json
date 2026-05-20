@@ -1,0 +1,21 @@
+{
+	"id": "zh-research-review-workflow",
+	"title": "中文 research + review 不应 direct",
+	"input": "帮我研究一型糖尿病的最近研究情况，写一篇综述",
+	"setup": {
+		"mockWorker": "literature-success"
+	},
+	"expect": {
+		"mode": "workflow",
+		"profiles": {
+			"include": ["literature-searcher"],
+			"includeAny": ["researcher", "writer"]
+		},
+		"events": {
+			"include": ["planner_start", "planner_complete", "workflow_start", "session_memory_updated"]
+		},
+		"finalOutput": {
+			"mustNotInclude": ["I will handle this directly"]
+		}
+	}
+}

@@ -1,0 +1,14 @@
+{
+	"id": "simple-direct-reading-frame",
+	"title": "简单 direct 任务允许 direct",
+	"input": "解释一下阅读框是什么",
+	"expect": {
+		"mode": "direct",
+		"profiles": {
+			"exclude": ["literature-searcher"]
+		},
+		"events": {
+			"include": ["synthesis_start", "synthesis_complete", "session_memory_updated"]
+		}
+	}
+}

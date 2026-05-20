@@ -1,0 +1,26 @@
+{
+	"id": "zh-literature-search-tool-required",
+	"title": "中文 literature search 必须调用工具",
+	"input": "帮我找 nir 和巩膜相关的近五年文献",
+	"setup": {
+		"mockWorker": "literature-tool-success"
+	},
+	"expect": {
+		"mode": "workflow",
+		"profiles": {
+			"include": ["literature-searcher"]
+		},
+		"tools": {
+			"include": ["literature.search"]
+		},
+		"artifacts": {
+			"includeKinds": ["literature-search-results"]
+		},
+		"events": {
+			"include": ["tool_call_start", "tool_call_complete", "artifact_created", "session_memory_updated"]
+		},
+		"finalOutput": {
+			"mustNotInclude": ["是否现在执行", "是否需要我检索", "should I run the search"]
+		}
+	}
+}

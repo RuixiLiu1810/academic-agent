@@ -1,0 +1,20 @@
+{
+	"id": "zh-search-no-confirmation",
+	"title": "检索任务不得询问是否执行",
+	"input": "帮我检索近五年 RLRL 治疗儿童近视的研究",
+	"setup": {
+		"mockWorker": "literature-tool-success"
+	},
+	"expect": {
+		"mode": "workflow",
+		"profiles": {
+			"include": ["literature-searcher"]
+		},
+		"tools": {
+			"include": ["literature.search"]
+		},
+		"finalOutput": {
+			"mustNotInclude": ["是否现在执行", "是否需要我检索", "should I run the search"]
+		}
+	}
+}

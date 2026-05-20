@@ -1,0 +1,18 @@
+{
+	"id": "single-step-literature-synthesis",
+	"title": "single-step literature synthesis 不透传 worker summary",
+	"input": "帮我找NIR相关文献",
+	"setup": {
+		"mockWorker": "literature-success"
+	},
+	"expect": {
+		"mode": "workflow",
+		"artifacts": {
+			"includeKinds": ["literature-search-results"]
+		},
+		"finalOutput": {
+			"mustInclude": ["Lead-level synthesis", "literature-search-results"],
+			"mustNotEqualRawWorkerSummary": true
+		}
+	}
+}

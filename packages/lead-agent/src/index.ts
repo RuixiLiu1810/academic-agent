@@ -77,6 +77,21 @@ export interface LeadAgentTaskRequest {
 
 export type LeadAgentRunEvent =
 	| {
+			type: "planner_start";
+			taskId: string;
+			sessionId: string;
+			objectivePreview: string;
+	  }
+	| {
+			type: "planner_complete";
+			taskId: string;
+			sessionId: string;
+			mode: WorkflowPlanMode;
+			stepCount: number;
+			stepProfiles: string[];
+			userVisibleSummary: string;
+	  }
+	| {
 			type: "plan_summary";
 			taskId: string;
 			sessionId: string;
@@ -93,6 +108,30 @@ export type LeadAgentRunEvent =
 	| {
 			type: "direct_session";
 			event: AgentHostSessionEvent;
+	  }
+	| {
+			type: "synthesis_start";
+			taskId: string;
+			sessionId: string;
+			acceptedArtifactCount: number;
+			rejectedStepCount: number;
+	  }
+	| {
+			type: "synthesis_complete";
+			taskId: string;
+			sessionId: string;
+			finalOutputLength: number;
+			acceptedArtifactCount: number;
+			rejectedStepCount: number;
+	  }
+	| {
+			type: "session_memory_updated";
+			taskId: string;
+			sessionId: string;
+			producedArtifactCount: number;
+			artifactKinds: string[];
+			issueCount: number;
+			hasWorkflowPlanSummary: boolean;
 	  }
 	| WorkflowExecutionEvent;
 
@@ -776,6 +815,14 @@ function emitPlanSummary(
 	});
 }
 
+function objectivePreview(objective: string): string {
+	return objective.length <= 160 ? objective : `${objective.slice(0, 157)}...`;
+}
+
+function stepProfiles(plan: WorkflowPlan): string[] {
+	return [...plan.steps].sort((a, b) => a.order - b.order).map((step) => step.profileId);
+}
+
 /**
  * @deprecated Import buildLeadDirectMessage from "./prompts.js" instead.
  * Kept for backward compatibility.
@@ -883,6 +930,36 @@ function recordLeadAssistantMessage(sessionManager: SessionManager, finalOutput:
 	});
 }
 
+function emitSessionMemoryUpdated(
+	request: LeadAgentTaskRequest,
+	taskId: string,
+	sessionId: string,
+	options: {
+		producedArtifacts: readonly ArtifactRef[];
+		issueCount: number;
+		hasWorkflowPlanSummary: boolean;
+	},
+): void {
+	request.onEvent?.({
+		type: "session_memory_updated",
+		taskId,
+		sessionId,
+		producedArtifactCount: options.producedArtifacts.length,
+		artifactKinds: options.producedArtifacts.map((artifact) => artifact.kind),
+		issueCount: options.issueCount,
+		hasWorkflowPlanSummary: options.hasWorkflowPlanSummary,
+	});
+}
+
+function rejectedStepCount(execution: {
+	stepResults: readonly { acceptanceReport?: AcceptanceReport; workerResult?: WorkerResult }[];
+}): number {
+	return execution.stepResults.filter(
+		(stepResult) =>
+			!(stepResult.acceptanceReport?.accepted === true && stepResult.workerResult?.status === "success"),
+	).length;
+}
+
 function decisionForWorkflowPlan(plan: WorkflowPlan, fallback: LeadAgentDecision): LeadAgentDecision {
 	if (plan.mode === "direct") {
 		return {
@@ -966,6 +1043,7 @@ function createDefaultWorkflowWorkerRunner(
 	cwd: string,
 	workspace: LeadSessionWorkspace,
 	config: LiteratureSearchConfig | undefined,
+	onEvent?: (event: WorkflowExecutionEvent) => void,
 ): LeadAgentWorkerRunner {
 	const literatureTool = createLiteratureSearchTool({
 		store: workspace.store,
@@ -989,6 +1067,7 @@ function createDefaultWorkflowWorkerRunner(
 		cwd,
 		store: workspace.store,
 		toolDefinitions: [literatureToolDefinition],
+		onEvent,
 	});
 	const structuredRunner = createStructuredProfileRunner({
 		store: workspace.store,
@@ -1056,6 +1135,13 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 		if (request.dispatchMode === "direct") {
 			const workflowPlan = createDirectWorkflowPlan(taskId, sessionId, request);
 			emitPlanSummary(request, workflowPlan, taskId, sessionId);
+			request.onEvent?.({
+				type: "synthesis_start",
+				taskId,
+				sessionId,
+				acceptedArtifactCount: 0,
+				rejectedStepCount: 0,
+			});
 			const result = await synthesizeDirect(taskId, sessionId, request, decision, directRunner, {
 				conversationContext,
 				model: modelRef.value,
@@ -1063,12 +1149,25 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 				tools: toolsRef.value,
 				noTools: noToolsRef.value,
 			});
+			request.onEvent?.({
+				type: "synthesis_complete",
+				taskId,
+				sessionId,
+				finalOutputLength: result.finalOutput.length,
+				acceptedArtifactCount: 0,
+				rejectedStepCount: 0,
+			});
 			result.workflowPlan = workflowPlan;
 			recordLeadAssistantMessage(sessionManager, result.finalOutput);
 			recordLeadEvent(sessionManager, "lead-agent.result", {
 				taskId,
 				finalOutput: result.finalOutput,
 				accepted: true,
+			});
+			emitSessionMemoryUpdated(request, taskId, sessionId, {
+				producedArtifacts: [],
+				issueCount: 0,
+				hasWorkflowPlanSummary: false,
 			});
 			return result;
 		}
@@ -1081,6 +1180,12 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			conversationContext,
 		});
 		let workflowPlan: WorkflowPlan;
+		request.onEvent?.({
+			type: "planner_start",
+			taskId,
+			sessionId,
+			objectivePreview: objectivePreview(request.objective),
+		});
 		try {
 			workflowPlan = await workflowPlanner.plan(planningInput);
 		} catch (e) {
@@ -1112,6 +1217,15 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			workflowPlan = createSingleStepWorkflowPlan(taskId, sessionId, request, decision, profiles);
 		}
 		const workflowDecision = decisionForWorkflowPlan(workflowPlan, decision);
+		request.onEvent?.({
+			type: "planner_complete",
+			taskId,
+			sessionId,
+			mode: workflowPlan.mode,
+			stepCount: workflowPlan.steps.length,
+			stepProfiles: stepProfiles(workflowPlan),
+			userVisibleSummary: workflowPlan.userVisibleSummary,
+		});
 		emitPlanSummary(request, workflowPlan, taskId, sessionId);
 		const clarification = workflowPlan.requiresClarification;
 		if (clarification?.blocksExecution) {
@@ -1138,6 +1252,13 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			return result;
 		}
 		if (workflowPlan.mode === "direct") {
+			request.onEvent?.({
+				type: "synthesis_start",
+				taskId,
+				sessionId,
+				acceptedArtifactCount: 0,
+				rejectedStepCount: 0,
+			});
 			const result = await synthesizeDirect(taskId, sessionId, request, workflowDecision, directRunner, {
 				conversationContext,
 				model: modelRef.value,
@@ -1145,12 +1266,25 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 				tools: toolsRef.value,
 				noTools: noToolsRef.value,
 			});
+			request.onEvent?.({
+				type: "synthesis_complete",
+				taskId,
+				sessionId,
+				finalOutputLength: result.finalOutput.length,
+				acceptedArtifactCount: 0,
+				rejectedStepCount: 0,
+			});
 			result.workflowPlan = workflowPlan;
 			recordLeadAssistantMessage(sessionManager, result.finalOutput);
 			recordLeadEvent(sessionManager, "lead-agent.result", {
 				taskId,
 				finalOutput: result.finalOutput,
 				accepted: true,
+			});
+			emitSessionMemoryUpdated(request, taskId, sessionId, {
+				producedArtifacts: [],
+				issueCount: 0,
+				hasWorkflowPlanSummary: false,
 			});
 			return result;
 		}
@@ -1169,7 +1303,12 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			});
 		const workerRunner =
 			options.workerRunner ??
-			createDefaultWorkflowWorkerRunner(sessionManager.getCwd(), workspace, options.literatureSearch);
+			createDefaultWorkflowWorkerRunner(
+				sessionManager.getCwd(),
+				workspace,
+				options.literatureSearch,
+				request.onEvent,
+			);
 		const execution = await executeWorkflowPlan({
 			plan: workflowPlan,
 			profiles,
@@ -1183,7 +1322,23 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 		});
 		const acceptanceReport = execution.acceptanceReports.at(-1);
 		const workerResult = latestWorkflowWorkerResult(execution.stepResults);
+		const rejectedSteps = rejectedStepCount(execution);
+		request.onEvent?.({
+			type: "synthesis_start",
+			taskId,
+			sessionId,
+			acceptedArtifactCount: execution.producedArtifacts.length,
+			rejectedStepCount: rejectedSteps,
+		});
 		const finalOutput = synthesizeWorkflowFinalOutput(workflowPlan, execution);
+		request.onEvent?.({
+			type: "synthesis_complete",
+			taskId,
+			sessionId,
+			finalOutputLength: finalOutput.length,
+			acceptedArtifactCount: execution.producedArtifacts.length,
+			rejectedStepCount: rejectedSteps,
+		});
 		const result: LeadAgentResult = {
 			taskId,
 			finalOutput,
@@ -1208,6 +1363,11 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 				stepProfiles: workflowPlan.steps.map((step) => step.profileId),
 			},
 			stepResultsSummary: stepResultsSummary(execution.stepResults),
+		});
+		emitSessionMemoryUpdated(request, taskId, sessionId, {
+			producedArtifacts: execution.producedArtifacts,
+			issueCount: acceptanceIssueSummary(execution.acceptanceReports).length,
+			hasWorkflowPlanSummary: true,
 		});
 		return result;
 	}
