@@ -148,7 +148,7 @@ export interface LeadAgentRuntimeOptions {
 	cwd?: string;
 	/** Model to use for the direct runner. If undefined, uses the default from settings. */
 	model?: LeadAgentModel;
-	/** Model to use for the LLM workflow planner. When absent and no workflowPlanner is set, falls back to a direct-mode stub. */
+	/** Model to use for the LLM workflow planner. Defaults to model when absent. */
 	plannerModel?: LeadAgentModel;
 	/** Thinking level for extended reasoning. Defaults to "off". */
 	thinkingLevel?: ThinkingLevel;
@@ -566,6 +566,163 @@ function createSingleStepWorkflowPlan(
 	};
 }
 
+const HEURISTIC_RESEARCH_TERMS = [
+	"literature",
+	"research",
+	"recent research",
+	"latest research",
+	"research progress",
+	"frontier",
+	"hotspot",
+	"文献",
+	"检索",
+	"找文献",
+	"研究",
+	"最近研究",
+	"最新研究",
+	"研究进展",
+	"研究现状",
+	"综述",
+	"文献综述",
+	"前沿",
+	"热点",
+] as const;
+
+const HEURISTIC_WRITING_TERMS = [
+	"write",
+	"writing",
+	"draft",
+	"review article",
+	"literature review",
+	"写",
+	"撰写",
+	"初稿",
+	"文章",
+	"综述",
+	"文献综述",
+] as const;
+
+function hasProfile(profiles: readonly WorkerProfile[], profileId: string): boolean {
+	return profiles.some((profile) => profile.id === profileId);
+}
+
+function stepObjective(userObjective: string, workerObjective: string): string {
+	return `User objective: ${userObjective}\n\nStep objective: ${workerObjective}`;
+}
+
+function createHeuristicWorkflowPlan(
+	input: Parameters<WorkflowPlanner["plan"]>[0],
+	profiles: readonly WorkerProfile[],
+): WorkflowPlan {
+	const isResearchTask = includesAny(input.objective, HEURISTIC_RESEARCH_TERMS);
+	if (!isResearchTask) {
+		return {
+			taskId: input.taskId,
+			sessionId: input.sessionId,
+			objective: input.objective,
+			rationale: "Heuristic planner found no separable academic retrieval or research step.",
+			userVisibleSummary: "I will handle this directly.",
+			mode: "direct",
+			steps: [],
+			stopConditions: ["Final answer produced"],
+		};
+	}
+	const steps: WorkflowPlan["steps"] = [];
+	const needsWriter = includesAny(input.objective, HEURISTIC_WRITING_TERMS);
+	const needsResearcher =
+		needsWriter ||
+		includesAny(input.objective, [
+			"research",
+			"recent research",
+			"latest research",
+			"research progress",
+			"研究",
+			"最近研究",
+			"最新研究",
+			"研究进展",
+			"研究现状",
+			"前沿",
+			"热点",
+		]);
+	if (hasProfile(profiles, "literature-searcher")) {
+		steps.push({
+			id: "literature-search",
+			order: steps.length + 1,
+			profileId: "literature-searcher",
+			objective: stepObjective(
+				input.objective,
+				"Run literature retrieval and produce literature-search-results with candidate bibliography and retrieval gaps.",
+			),
+			inputArtifactRefs: input.inputArtifacts,
+			expectedArtifactKinds: ["literature-search-results"],
+			expectedOutputs:
+				input.expectedOutputs.length > 0
+					? input.expectedOutputs
+					: ["search strategy", "bibliography candidates", "retrieval gaps"],
+			acceptanceCriteria: ["Candidate bibliography is separated from verified evidence"],
+		});
+	}
+	if (needsResearcher && hasProfile(profiles, "researcher")) {
+		steps.push({
+			id: "evidence-summary",
+			order: steps.length + 1,
+			profileId: "researcher",
+			objective: stepObjective(
+				input.objective,
+				"Synthesize accepted literature outputs into evidence summary, evidence table, and uncertainty notes.",
+			),
+			inputArtifactRefs: [],
+			expectedArtifactKinds: ["evidence-table"],
+			expectedOutputs: ["evidence summary", "evidence-table", "uncertainty notes"],
+			acceptanceCriteria: ["Evidence is separated from interpretation", "Uncertainty is explicit"],
+		});
+	}
+	if (needsWriter && hasProfile(profiles, "writer")) {
+		steps.push({
+			id: "draft",
+			order: steps.length + 1,
+			profileId: "writer",
+			objective: stepObjective(
+				input.objective,
+				"Draft a bounded academic synthesis from accepted literature and evidence outputs.",
+			),
+			inputArtifactRefs: [],
+			expectedArtifactKinds: ["draft-text"],
+			expectedOutputs: ["draft text"],
+			acceptanceCriteria: ["Claims are bounded", "Style is consistent"],
+		});
+	}
+	if (steps.length === 0) {
+		const fallback = profiles[0];
+		if (fallback) {
+			steps.push({
+				id: fallback.id,
+				order: 1,
+				profileId: fallback.id,
+				objective: stepObjective(input.objective, "Run the best available academic worker for this task."),
+				inputArtifactRefs: input.inputArtifacts,
+				expectedArtifactKinds: [],
+				expectedOutputs: fallback.expectedOutputs ?? ["worker summary"],
+				acceptanceCriteria: fallback.acceptanceChecklist ?? [],
+			});
+		}
+	}
+	return {
+		taskId: input.taskId,
+		sessionId: input.sessionId,
+		objective: input.objective,
+		rationale: "Heuristic planner selected a workflow for a research or literature-review request.",
+		userVisibleSummary: "I will search, synthesize evidence, and draft only when requested.",
+		mode: "workflow",
+		steps,
+		stopConditions: ["Workflow outputs accepted"],
+	};
+}
+
+function createHeuristicWorkflowPlanner(profiles: readonly WorkerProfile[]): WorkflowPlanner {
+	return createFauxWorkflowPlanner((input) => createHeuristicWorkflowPlan(input, profiles));
+}
+
 async function synthesizeDirect(
 	taskId: string,
 	sessionId: string,
@@ -755,6 +912,56 @@ function latestWorkflowWorkerResult(stepResults: readonly { workerResult?: Worke
 	return undefined;
 }
 
+function artifactRefJson(artifact: ArtifactRef): JsonObject {
+	return {
+		id: artifact.id,
+		kind: artifact.kind,
+		uri: artifact.uri,
+		...(artifact.title ? { title: artifact.title } : {}),
+		...(artifact.mediaType ? { mediaType: artifact.mediaType } : {}),
+		...(artifact.version ? { version: artifact.version } : {}),
+		...(artifact.metadata ? { metadata: artifact.metadata } : {}),
+	};
+}
+
+function artifactBriefJson(brief: ArtifactBrief): JsonObject {
+	return {
+		artifactId: brief.artifactId,
+		kind: brief.kind,
+		brief: brief.brief,
+		...(brief.title ? { title: brief.title } : {}),
+		...(brief.keyFindings ? { keyFindings: brief.keyFindings } : {}),
+		...(brief.limitations ? { limitations: brief.limitations } : {}),
+	};
+}
+
+function acceptanceIssueSummary(reports: readonly AcceptanceReport[]): JsonObject[] {
+	return reports.flatMap((report) =>
+		report.issues.map((issue) => ({
+			code: issue.code,
+			severity: issue.severity,
+			message: issue.message,
+			...(issue.artifactId ? { artifactId: issue.artifactId } : {}),
+		})),
+	);
+}
+
+function stepResultsSummary(
+	stepResults: readonly {
+		step: WorkflowPlan["steps"][number];
+		workerResult?: WorkerResult;
+		acceptanceReport?: AcceptanceReport;
+	}[],
+): JsonObject[] {
+	return stepResults.map((result) => ({
+		stepId: result.step.id,
+		profileId: result.step.profileId,
+		accepted: result.acceptanceReport?.accepted ?? false,
+		producedArtifactKinds: result.workerResult?.producedArtifacts.map((artifact) => artifact.kind) ?? [],
+		issueCodes: result.acceptanceReport?.issues.map((issue) => issue.code) ?? [],
+	}));
+}
+
 function createDefaultWorkflowWorkerRunner(
 	cwd: string,
 	workspace: LeadSessionWorkspace,
@@ -794,25 +1001,17 @@ function createDefaultWorkflowWorkerRunner(
 
 export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): LeadAgentRuntime {
 	const profiles = options.profiles ?? loadAcademicProfilesFromDir();
-	// Priority: 1. injected workflowPlanner  2. plannerModel → LLM planner  3. direct-mode stub fallback
+	const plannerModel = options.plannerModel ?? options.model;
+	// Priority: 1. injected workflowPlanner  2. plannerModel/model → LLM planner  3. heuristic workflow planner
 	const workflowPlanner =
 		options.workflowPlanner ??
-		(options.plannerModel
+		(plannerModel
 			? createLlmWorkflowPlanner({
-					model: options.plannerModel,
+					model: plannerModel,
 					templates: WORKFLOW_TEMPLATES,
 					profiles,
 				})
-			: createFauxWorkflowPlanner((input) => ({
-					taskId: input.taskId,
-					sessionId: input.sessionId,
-					objective: input.objective,
-					rationale: "No LLM planner configured; handling directly.",
-					userVisibleSummary: "I will handle this directly.",
-					mode: "direct" as const,
-					steps: [],
-					stopConditions: ["Final answer produced"],
-				})));
+			: createHeuristicWorkflowPlanner(profiles));
 	const sessionManager = options.sessionManager ?? SessionManager.inMemory(options.cwd ?? process.cwd());
 
 	// Mutable refs so setModel() can update them after creation
@@ -1000,6 +1199,15 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			taskId,
 			finalOutput: result.finalOutput,
 			accepted: acceptanceReport?.accepted ?? execution.accepted,
+			producedArtifacts: execution.producedArtifacts.map(artifactRefJson),
+			artifactBriefs: execution.artifactBriefs.map(artifactBriefJson),
+			issues: acceptanceIssueSummary(execution.acceptanceReports),
+			workflowPlanSummary: {
+				mode: workflowPlan.mode,
+				stepCount: workflowPlan.steps.length,
+				stepProfiles: workflowPlan.steps.map((step) => step.profileId),
+			},
+			stepResultsSummary: stepResultsSummary(execution.stepResults),
 		});
 		return result;
 	}
