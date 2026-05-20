@@ -205,4 +205,62 @@ describe("profile worker runner", () => {
 		expect(prompt).toContain("Find NIR literature.");
 		expect(prompt).toContain("prior-lit (literature-search-results)");
 	});
+
+	it("renders literature-searcher tool-first requirements in worker prompt", () => {
+		const prompt = buildProfileWorkerPrompt({
+			taskId: "prompt-literature-tool-first",
+			workerType: "literature-searcher",
+			objective: "Find NIR papers.",
+			constraints: [],
+			inputArtifacts: [],
+			expectedOutputs: ["literature-search-results"],
+			acceptanceCriteria: [],
+			profile: {
+				id: "literature-searcher",
+				name: "Literature Searcher",
+				capabilities: ["literature-search"],
+				allowedTools: ["literature.search"],
+			},
+		});
+
+		expect(prompt).toContain("## Tool Use Requirements");
+		expect(prompt).toContain("The user has already requested literature retrieval.");
+		expect(prompt).toContain("You must call literature.search before the final answer.");
+		expect(prompt).toContain("Do not ask whether to run the search.");
+	});
+
+	it("renders forced literature repair instructions when retrying after missing artifact failures", () => {
+		const prompt = buildProfileWorkerPrompt({
+			taskId: "prompt-literature-retry",
+			workerType: "literature-searcher",
+			objective: "Find NIR papers.",
+			constraints: [],
+			inputArtifacts: [],
+			expectedOutputs: ["literature-search-results"],
+			acceptanceCriteria: [],
+			profile: {
+				id: "literature-searcher",
+				name: "Literature Searcher",
+				capabilities: ["literature-search"],
+				allowedTools: ["literature.search"],
+			},
+			attemptContext: {
+				attempt: 2,
+				maxAttempts: 2,
+				previousIssues: [
+					{
+						code: "artifact_missing",
+						message: "Missing artifact kind: literature-search-results",
+						severity: "error",
+					},
+				],
+				previousFailureReason: "Missing artifact kind: literature-search-results",
+			},
+		});
+
+		expect(prompt).toContain("Previous attempt failed because no literature-search-results artifact was produced.");
+		expect(prompt).toContain("Call literature.search now.");
+		expect(prompt).toContain("Do not answer with only a search strategy.");
+		expect(prompt).toContain("Do not ask for confirmation.");
+	});
 });

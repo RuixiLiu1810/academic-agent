@@ -112,6 +112,20 @@ describe("lead acceptance", () => {
 		expect(report.issues.some((issue) => issue.code === "expected_output_missing")).toBe(true);
 	});
 
+	it("does not infer artifact requirements from legacy bibliography candidate labels", () => {
+		const report = createLeadAcceptanceReport(
+			request(["bibliography candidates"]),
+			result({
+				summary: "Bibliography candidates: representative NIR literature should be screened in PubMed.",
+				producedArtifacts: [],
+				artifactBriefs: [],
+			}),
+		);
+
+		expect(report.accepted).toBe(true);
+		expect(report.issues.some((issue) => issue.code === "expected_output_missing")).toBe(false);
+	});
+
 	it("still rejects genuinely missing expected outputs", () => {
 		const report = createLeadAcceptanceReport(
 			request(["citation audit"]),

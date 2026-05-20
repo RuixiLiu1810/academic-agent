@@ -4,14 +4,21 @@ import { join } from "node:path";
 import type { WorkerResult } from "@mariozechner/pi-agent-contracts";
 import { createExecutionTrace } from "@mariozechner/pi-agent-contracts";
 import { AuthStorage, SessionManager } from "@mariozechner/pi-agent-host";
-import { fauxAssistantMessage, registerFauxProvider } from "@mariozechner/pi-ai";
+import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@mariozechner/pi-ai";
 import { afterEach, describe, expect, it } from "vitest";
-import type { LeadAgentTaskRequest } from "../src/index.js";
-import { createLeadAgentRuntime, loadAcademicProfilesFromDir, parseAcademicProfileMarkdown } from "../src/index.js";
+import type { LeadAgentModel, LeadAgentTaskRequest } from "../src/index.js";
+import {
+	createLeadAgentRuntime,
+	DEFAULT_ACADEMIC_PROFILES,
+	loadAcademicProfilesFromDir,
+	parseAcademicProfileMarkdown,
+} from "../src/index.js";
 import {
 	ACADEMIC_COMPACTION_KIND,
 	buildLeadConversationContext,
+	createLeadTaskPlanningInput,
 	summarizeWorkflowTemplatesForPlanner,
+	validateWorkflowPlan,
 	WORKFLOW_TEMPLATES,
 } from "../src/orchestration/index.js";
 import { buildLeadDirectMessage } from "../src/prompts.js";
@@ -182,7 +189,13 @@ Use the custom audit role.
 				status: "success",
 				summary: "outline completed",
 				structuredOutputs: { expectedOutputs: request.expectedOutputs },
-				producedArtifacts: [],
+				producedArtifacts: [
+					{
+						id: "outline-1",
+						kind: "outline",
+						uri: "memory://outline-1",
+					},
+				],
 				warnings: [],
 				openQuestions: [],
 				executionTrace: createExecutionTrace("run-writing-planner"),
@@ -199,6 +212,134 @@ Use the custom audit role.
 		expect(result.decision.mode).toBe("worker");
 		expect(result.workflowPlan?.steps.map((step) => step.profileId)).toEqual(["writer"]);
 		expect(result.finalOutput).toContain("outline completed");
+	});
+
+	it("uses the runtime model as the default LLM planner model in auto mode", async () => {
+		const faux = registerFauxProvider();
+		try {
+			faux.setResponses([
+				fauxAssistantMessage(
+					fauxToolCall("submit_workflow_plan", {
+						plan: {
+							taskId: "task-model-default-planner",
+							sessionId: "session-ignored",
+							objective: "帮我研究一型糖尿病的最近研究情况，写一篇综述",
+							rationale: "continuity=new_task; this needs literature retrieval before synthesis.",
+							userVisibleSummary: "I will search, synthesize evidence, and draft a review.",
+							mode: "workflow",
+							steps: [
+								{
+									id: "literature-search",
+									order: 1,
+									profileId: "literature-searcher",
+									objective:
+										"User objective: 帮我研究一型糖尿病的最近研究情况，写一篇综述\n\nStep objective: Retrieve literature search results for type 1 diabetes recent research.",
+									inputArtifactRefs: [],
+									expectedArtifactKinds: ["literature-search-results"],
+									expectedOutputs: ["search strategy", "bibliography candidates", "retrieval gaps"],
+									acceptanceCriteria: ["Candidate bibliography is separated from verified evidence"],
+								},
+							],
+							stopConditions: ["Literature search results accepted"],
+						},
+					}),
+					{ stopReason: "toolUse" },
+				),
+			]);
+			const runtime = createLeadAgentRuntime({
+				cwd: makeTempDir(),
+				model: faux.getModel() as LeadAgentModel,
+				directRunner: async () => {
+					throw new Error("direct runner should not run");
+				},
+				workerRunner: async (request) => ({
+					taskId: request.taskId,
+					status: "success",
+					summary: "search strategy, bibliography candidates, and retrieval gaps completed",
+					structuredOutputs: {
+						"search strategy": "type 1 diabetes recent research search",
+						"bibliography candidates": ["candidate"],
+						"retrieval gaps": ["database coverage"],
+					},
+					producedArtifacts: [
+						{
+							id: "t1d-lit",
+							kind: "literature-search-results",
+							uri: "memory://t1d-lit",
+						},
+					],
+					warnings: [],
+					openQuestions: [],
+					executionTrace: createExecutionTrace("run-default-planner"),
+				}),
+			});
+
+			const result = await runtime.run({
+				taskId: "task-model-default-planner",
+				objective: "帮我研究一型糖尿病的最近研究情况，写一篇综述",
+			});
+
+			expect(result.workflowPlan?.mode).toBe("workflow");
+			expect(result.decision.mode).toBe("worker");
+			expect(result.finalOutput).not.toContain("I will handle this directly.");
+		} finally {
+			faux.unregister();
+		}
+	});
+
+	it("uses heuristic workflow fallback for Chinese research and review tasks when no model is configured", async () => {
+		const seenProfiles: string[] = [];
+		const runtime = createLeadAgentRuntime({
+			cwd: makeTempDir(),
+			directRunner: async () => {
+				throw new Error("direct runner should not run");
+			},
+			workerRunner: async (request) => {
+				seenProfiles.push(request.workerType);
+				const kind = request.outputContract?.requirements.find(
+					(requirement) => requirement.kind === "artifact",
+				)?.artifactKind;
+				return {
+					taskId: request.taskId,
+					status: "success",
+					summary: `${request.expectedOutputs.join(", ")} completed`,
+					structuredOutputs: Object.fromEntries(request.expectedOutputs.map((output) => [output, "completed"])),
+					producedArtifacts: kind
+						? [
+								{
+									id: `${request.workerType}-${kind}`,
+									kind,
+									uri: `memory://${request.workerType}-${kind}`,
+								},
+							]
+						: [],
+					warnings: [],
+					openQuestions: [],
+					executionTrace: createExecutionTrace(`run-${request.workerType}`),
+				};
+			},
+		});
+
+		const first = await runtime.run({
+			taskId: "task-heuristic-research-review",
+			objective: "帮我研究一型糖尿病的最近研究情况，写一篇综述",
+		});
+		const second = await runtime.run({
+			taskId: "task-heuristic-literature-review",
+			objective: "帮我写一篇关于一型糖尿病治疗进展的文献综述",
+		});
+
+		expect(first.workflowPlan?.mode).toBe("workflow");
+		expect(second.workflowPlan?.mode).toBe("workflow");
+		expect(first.workflowPlan?.steps.map((step) => step.profileId)).toContain("literature-searcher");
+		expect(second.workflowPlan?.steps.map((step) => step.profileId)).toContain("literature-searcher");
+		expect(first.workflowPlan?.steps.map((step) => step.profileId)).toEqual(
+			expect.arrayContaining(["literature-searcher", "researcher", "writer"]),
+		);
+		expect(second.workflowPlan?.steps.map((step) => step.profileId)).toEqual(
+			expect.arrayContaining(["literature-searcher", "researcher", "writer"]),
+		);
+		expect(seenProfiles).toContain("literature-searcher");
 	});
 
 	it("returns a clarification result before running workers when the planner blocks execution", async () => {
@@ -748,6 +889,139 @@ Use the custom audit role.
 
 		expect(called).toBe(true);
 		expect(result.acceptanceReport?.accepted).toBe(true);
+	});
+
+	it("records workflow artifact memory in lead-agent result entries and exposes it to the next planning input", async () => {
+		const sessionManager = SessionManager.inMemory(makeTempDir());
+		const producedArtifact = {
+			id: "memory-lit-1",
+			kind: "literature-search-results",
+			uri: "memory://memory-lit-1",
+			title: "Prior literature results",
+		};
+		const artifactBrief = {
+			artifactId: producedArtifact.id,
+			kind: producedArtifact.kind,
+			title: "Prior literature results",
+			brief: "Search results for NIR literature.",
+		};
+		const runtime = createLeadAgentRuntime({
+			cwd: makeTempDir(),
+			sessionManager,
+			workflowPlanner: {
+				async plan(input) {
+					return {
+						taskId: input.taskId,
+						sessionId: input.sessionId,
+						objective: input.objective,
+						rationale: "Run literature search.",
+						userVisibleSummary: "I will create a literature artifact.",
+						mode: "workflow",
+						steps: [
+							{
+								id: "literature-search",
+								order: 1,
+								profileId: "literature-searcher",
+								objective: `User objective: ${input.objective}\n\nStep objective: Produce literature-search-results for memory regression.`,
+								inputArtifactRefs: [],
+								expectedArtifactKinds: ["literature-search-results"],
+								expectedOutputs: ["search strategy", "bibliography candidates", "retrieval gaps"],
+								acceptanceCriteria: ["Candidate bibliography is separated from verified evidence"],
+							},
+						],
+						stopConditions: ["artifact accepted"],
+					};
+				},
+			},
+			workerRunner: async (request) => ({
+				taskId: request.taskId,
+				status: "success",
+				summary: "search strategy, bibliography candidates, and retrieval gaps completed",
+				structuredOutputs: {
+					"search strategy": "NIR",
+					"bibliography candidates": ["candidate"],
+					"retrieval gaps": ["none"],
+				},
+				producedArtifacts: [producedArtifact],
+				artifactBriefs: [artifactBrief],
+				warnings: [],
+				openQuestions: [],
+				executionTrace: createExecutionTrace("run-memory-artifact"),
+			}),
+		});
+
+		await runtime.run({
+			taskId: "task-memory-artifact-1",
+			objective: "帮我寻找一些关于NIR的文献",
+		});
+
+		const resultEntry = sessionManager
+			.getEntries()
+			.find((entry) => entry.type === "custom" && entry.customType === "lead-agent.result");
+		expect(resultEntry?.type === "custom" ? resultEntry.data : undefined).toMatchObject({
+			producedArtifacts: [producedArtifact],
+			artifactBriefs: [artifactBrief],
+			workflowPlanSummary: {
+				mode: "workflow",
+				stepCount: 1,
+				stepProfiles: ["literature-searcher"],
+			},
+			stepResultsSummary: [
+				{
+					stepId: "literature-search",
+					profileId: "literature-searcher",
+					accepted: true,
+					producedArtifactKinds: ["literature-search-results"],
+				},
+			],
+		});
+
+		const context = buildLeadConversationContext({
+			sessionManager,
+			currentObjective: "继续总结刚才那批文献",
+		});
+		expect(context.priorArtifacts.map((artifact) => artifact.id)).toContain(producedArtifact.id);
+		const planningInput = createLeadTaskPlanningInput({
+			request: {
+				objective: "继续总结刚才那批文献",
+			},
+			taskId: "task-memory-artifact-2",
+			sessionId: sessionManager.getSessionId(),
+			profiles: DEFAULT_ACADEMIC_PROFILES,
+			conversationContext: context,
+		});
+		expect(planningInput.availableArtifactRefs.map((artifact) => artifact.id)).toContain(producedArtifact.id);
+		expect(
+			validateWorkflowPlan(
+				{
+					taskId: planningInput.taskId,
+					sessionId: planningInput.sessionId,
+					objective: planningInput.objective,
+					rationale: "Use prior artifact.",
+					userVisibleSummary: "I will synthesize the prior literature artifact.",
+					mode: "workflow",
+					steps: [
+						{
+							id: "evidence-summary",
+							order: 1,
+							profileId: "researcher",
+							objective: `User objective: ${planningInput.objective}\n\nStep objective: Use prior literature results.`,
+							inputArtifactRefs: [producedArtifact],
+							expectedArtifactKinds: ["evidence-table"],
+							expectedOutputs: ["evidence summary"],
+							acceptanceCriteria: ["Uncertainty is explicit"],
+						},
+					],
+					stopConditions: ["accepted"],
+				},
+				{
+					profiles: DEFAULT_ACADEMIC_PROFILES,
+					templates: WORKFLOW_TEMPLATES,
+					inputArtifacts: planningInput.inputArtifacts,
+					availableArtifactRefs: planningInput.availableArtifactRefs,
+				},
+			),
+		).toEqual([]);
 	});
 
 	it("records lead decisions in a caller-provided host session", async () => {

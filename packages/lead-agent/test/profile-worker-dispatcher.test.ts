@@ -70,6 +70,27 @@ describe("profile worker dispatcher", () => {
 		expect(seen).toEqual(["structured:researcher"]);
 	});
 
+	it("routes every non-literature academic profile to the structured placeholder runner", async () => {
+		const academicProfiles = ["researcher", "reviewer", "writer", "reviser", "method-auditor", "citation-checker"];
+		const seen: string[] = [];
+		const dispatcher = createProfileWorkerDispatcher({
+			literatureRunner: async (workerRequest) => {
+				seen.push(`literature:${workerRequest.workerType}`);
+				return workerResult(workerRequest, "literature");
+			},
+			structuredRunner: async (workerRequest) => {
+				seen.push(`structured:${workerRequest.workerType}`);
+				return workerResult(workerRequest, "structured");
+			},
+		});
+
+		for (const profileId of academicProfiles) {
+			await dispatcher(request(profileId));
+		}
+
+		expect(seen).toEqual(academicProfiles.map((profileId) => `structured:${profileId}`));
+	});
+
 	it("returns a failed worker result for unknown profiles", async () => {
 		const dispatcher = createProfileWorkerDispatcher({
 			literatureRunner: async (workerRequest) => workerResult(workerRequest, "literature"),
