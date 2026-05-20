@@ -74,8 +74,11 @@ describe("lead-agent CLI output", () => {
 		const markdown = renderLeadAgentMarkdown(createLeadAgentRunView(resultFixture()));
 
 		expect(markdown).toContain("# Lead Agent Result");
-		expect(markdown).toContain("citation audit and then return the accepted result");
 		expect(markdown).toContain("citation audit completed");
+		expect(markdown).toContain("- Plan summary: I will run a citation audit and then return the accepted result.");
+		expect(markdown.indexOf("citation audit completed")).toBeLessThan(
+			markdown.indexOf("- Plan summary: I will run a citation audit and then return the accepted result."),
+		);
 		expect(markdown).toContain("- Decision: worker/citation-checker");
 		expect(markdown).toContain("- Accepted: yes");
 		expect(markdown).toContain("- claim-audit: Claim audit");

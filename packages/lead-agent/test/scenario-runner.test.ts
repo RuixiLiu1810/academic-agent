@@ -127,9 +127,12 @@ function makeTrace(overrides: Partial<ScenarioTrace> = {}): ScenarioTrace {
 						taskId,
 						sessionId: "session-synthetic",
 						mode: "workflow",
+						planMode: "workflow",
 						stepCount: 1,
 						stepProfiles: ["literature-searcher"],
 						userVisibleSummary: "workflow",
+						plannerSource: "llm",
+						fallbackUsed: false,
 					},
 					...makeToolEvents(taskId),
 					{

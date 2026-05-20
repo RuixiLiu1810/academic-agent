@@ -25,9 +25,6 @@ export class RunResultComponent extends Container {
 
 		this.addChild(new Spacer(1));
 		this.addChild(new Text(modeLabel, 1, 0));
-		if (view.planSummary) {
-			this.addChild(new Text(theme.dim(view.planSummary), 1, 0));
-		}
 		this.addChild(new Markdown(view.finalOutput, 1, 0, markdownTheme));
 
 		for (const issue of view.issues) {

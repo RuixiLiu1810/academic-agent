@@ -91,6 +91,51 @@ export interface RunLeadTuiModeOptions {
 	verbose?: boolean;
 }
 
+export function describeLeadTuiProgressEvent(event: LeadAgentRunEvent): string | undefined {
+	switch (event.type) {
+		case "planner_start":
+			return "Planning workflow...";
+		case "planner_model_call_start":
+			return `Planner ${event.attempt}: calling ${event.modelProvider}/${event.modelId}`;
+		case "planner_model_call_complete": {
+			const outcome = event.failureReason === "ok" ? "tool plan received" : event.failureReason;
+			return `Planner ${event.attempt}: ${outcome}`;
+		}
+		case "planner_fallback":
+			return `Planner fallback: heuristic (${event.fallbackReason})`;
+		case "planner_complete": {
+			const suffix = event.stepProfiles.length > 0 ? `: ${event.stepProfiles.join(", ")}` : "";
+			return `Planner source ${event.plannerSource} -> ${event.planMode} (${event.stepCount} steps${suffix})`;
+		}
+		case "plan_summary":
+			return `Plan: ${event.summary}`;
+		case "clarification_required":
+			return event.clarification.question;
+		case "workflow_start":
+			return `Workflow started (${event.stepCount} steps)`;
+		case "workflow_step_start":
+		case "workflow_step_retry":
+		case "workflow_step_complete":
+			return event.message;
+		case "worker_start":
+			return `Worker started: ${event.profileId} (attempt ${event.attempt})`;
+		case "worker_complete":
+			return `Worker completed: ${event.profileId} [${event.status}]`;
+		case "acceptance_complete":
+			return `Acceptance ${event.accepted ? "passed" : "failed"} for ${event.profileId} (${event.issueCount} issues)`;
+		case "workflow_complete":
+			return `Workflow complete: ${event.accepted ? "accepted" : "not accepted"}`;
+		case "synthesis_start":
+			return "Synthesizing final response...";
+		case "synthesis_complete":
+			return "Final synthesis complete.";
+		case "session_memory_updated":
+			return "Session memory updated.";
+		default:
+			return undefined;
+	}
+}
+
 function parseTuiAcademicTaskType(value: string): AcademicTaskType | undefined {
 	if (
 		value === "writing" ||
@@ -470,22 +515,9 @@ export async function runLeadTuiMode(options: RunLeadTuiModeOptions): Promise<nu
 						}
 						return;
 					}
-					if (event.type === "plan_summary") {
-						workflowProgressLines.push(event.summary);
-						updateStreamingText();
-						return;
-					}
-					if (event.type === "clarification_required") {
-						workflowProgressLines.push(event.clarification.question);
-						updateStreamingText();
-						return;
-					}
-					if (
-						event.type === "workflow_step_start" ||
-						event.type === "workflow_step_retry" ||
-						event.type === "workflow_step_complete"
-					) {
-						workflowProgressLines.push(event.message);
+					const progressLine = describeLeadTuiProgressEvent(event);
+					if (progressLine) {
+						workflowProgressLines.push(progressLine);
 						updateStreamingText();
 					}
 				},

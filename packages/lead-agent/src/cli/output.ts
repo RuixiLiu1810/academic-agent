@@ -54,7 +54,6 @@ export function renderLeadAgentMarkdown(view: LeadAgentRunView): string {
 	const lines = [
 		"# Lead Agent Result",
 		"",
-		...(view.planSummary ? [view.planSummary, ""] : []),
 		view.finalOutput,
 		"",
 		"## Run",
@@ -64,6 +63,9 @@ export function renderLeadAgentMarkdown(view: LeadAgentRunView): string {
 		`- Decision: ${view.decision}`,
 		`- Accepted: ${yesNo(view.accepted)}`,
 	];
+	if (view.planSummary) {
+		lines.push(`- Plan summary: ${view.planSummary}`);
+	}
 	if (view.artifactManifestPath) {
 		lines.push(`- Artifact manifest: ${view.artifactManifestPath}`);
 	}

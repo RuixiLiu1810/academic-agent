@@ -78,6 +78,10 @@ describe("lead-agent runtime progress events", () => {
 			onEvent: (event) => events.push(event),
 		});
 
+		const plannerCompleteIndex = events.findIndex((event) => event.type === "planner_complete");
+		const workflowStartIndex = events.findIndex((event) => event.type === "workflow_start");
+		const plannerCompleteEvent = events.find((event) => event.type === "planner_complete");
+
 		expectOrderedSubset(eventTypes(events), [
 			"planner_start",
 			"planner_complete",
@@ -94,6 +98,15 @@ describe("lead-agent runtime progress events", () => {
 			"synthesis_complete",
 			"session_memory_updated",
 		]);
+		expect(plannerCompleteIndex).toBeGreaterThanOrEqual(0);
+		expect(workflowStartIndex).toBeGreaterThan(plannerCompleteIndex);
+		expect(plannerCompleteEvent).toMatchObject({
+			type: "planner_complete",
+			mode: "workflow",
+			planMode: "workflow",
+			plannerSource: "heuristic",
+			fallbackUsed: false,
+		});
 	});
 
 	it("emits artifact_created without artifact content", async () => {
@@ -317,11 +330,22 @@ describe("lead-agent runtime progress events", () => {
 		// planner_error is emitted for observability
 		expect(events.find((e) => e.type === "planner_error")).toBeDefined();
 		// heuristic fallback produces a valid plan → planner_complete fires
+		const fallbackEvent = events.find((e) => e.type === "planner_fallback");
+		expect(fallbackEvent).toBeDefined();
 		const completeEvent = events.find((e) => e.type === "planner_complete");
 		expect(completeEvent).toBeDefined();
-		expect(completeEvent).toMatchObject({ type: "planner_complete", mode: "workflow" });
+		expect(completeEvent).toMatchObject({
+			type: "planner_complete",
+			mode: "workflow",
+			planMode: "workflow",
+			plannerSource: "fallback",
+			fallbackUsed: true,
+			fallbackReason: "no_tool_use_stop_reason",
+		});
+		expect(events.find((e) => e.type === "workflow_start")).toBeDefined();
 		// run does not return the error sentinel
 		expect(result.finalOutput).not.toBe("未能生成可执行的工作流计划。请检查输入后重试。");
+		expect(result.finalOutput).not.toBe("I will search, synthesize evidence, and draft only when requested.");
 		// planner_error precedes planner_complete
 		const errorIdx = events.findIndex((e) => e.type === "planner_error");
 		const completeIdx = events.findIndex((e) => e.type === "planner_complete");

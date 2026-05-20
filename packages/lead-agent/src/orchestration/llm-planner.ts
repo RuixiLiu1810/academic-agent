@@ -11,7 +11,35 @@ export interface LlmWorkflowPlannerConfig {
 	model: LeadAgentModel;
 	templates: WorkflowTemplate[];
 	profiles: readonly WorkerProfile[];
+	onEvent?: (event: LlmWorkflowPlannerEvent) => void;
 }
+
+export type LlmWorkflowPlannerEvent =
+	| {
+			type: "planner_model_call_start";
+			taskId: string;
+			sessionId: string;
+			attempt: PlannerCallDebugEntry["attempt"];
+			modelId: string;
+			modelProvider: string;
+	  }
+	| {
+			type: "planner_model_call_complete";
+			taskId: string;
+			sessionId: string;
+			attempt: PlannerCallDebugEntry["attempt"];
+			modelId: string;
+			modelProvider: string;
+			stopReason?: string;
+			rawTextPreview?: string;
+			toolCallCount: number;
+			toolCallNames: string[];
+			rawToolArgsPreview?: string;
+			parsedPlanPreview?: string;
+			validationErrors: string[];
+			errors: string[];
+			failureReason: string;
+	  };
 
 export interface PlannerCallDebugEntry {
 	attempt: "first" | "repair";
@@ -291,16 +319,39 @@ export function createLlmWorkflowPlanner(config: LlmWorkflowPlannerConfig): Work
 			};
 
 			// First attempt
+			config.onEvent?.({
+				type: "planner_model_call_start",
+				taskId: input.taskId,
+				sessionId: input.sessionId,
+				attempt: "first",
+				modelId: config.model.id,
+				modelProvider: config.model.provider,
+			});
 			const { result: first, debug: firstDebug } = await runPlannerCall(
 				buildContext(buildUserMessage(input, config)),
 				config,
 				"first",
 			);
 			const firstErrors = first.ok ? validateWorkflowPlan(first.plan, validationContext) : first.errors;
-			if (first.ok) {
-				firstDebug.validationErrors = firstErrors;
-				if (firstErrors.length > 0) firstDebug.failureReason = "validation_failed";
-			}
+			firstDebug.validationErrors = first.ok ? firstErrors : [];
+			if (first.ok && firstErrors.length > 0) firstDebug.failureReason = "validation_failed";
+			config.onEvent?.({
+				type: "planner_model_call_complete",
+				taskId: input.taskId,
+				sessionId: input.sessionId,
+				attempt: "first",
+				modelId: config.model.id,
+				modelProvider: config.model.provider,
+				stopReason: firstDebug.stopReason,
+				rawTextPreview: firstDebug.rawTextPreview,
+				toolCallCount: firstDebug.toolCallCount,
+				toolCallNames: firstDebug.toolCallNames,
+				rawToolArgsPreview: firstDebug.rawToolArgsPreview,
+				parsedPlanPreview: firstDebug.parsedPlanPreview,
+				validationErrors: firstDebug.validationErrors,
+				errors: firstErrors,
+				failureReason: firstDebug.failureReason,
+			});
 
 			if (first.ok && firstErrors.length === 0) {
 				assertValidWorkflowPlan(first.plan, validationContext);
@@ -309,16 +360,39 @@ export function createLlmWorkflowPlanner(config: LlmWorkflowPlannerConfig): Work
 
 			// Repair attempt
 			const firstPlan = first.ok ? first.plan : null;
+			config.onEvent?.({
+				type: "planner_model_call_start",
+				taskId: input.taskId,
+				sessionId: input.sessionId,
+				attempt: "repair",
+				modelId: config.model.id,
+				modelProvider: config.model.provider,
+			});
 			const { result: repair, debug: repairDebug } = await runPlannerCall(
 				buildContext(buildRepairUserMessage(input, config, firstErrors, firstPlan)),
 				config,
 				"repair",
 			);
 			const secondErrors = repair.ok ? validateWorkflowPlan(repair.plan, validationContext) : repair.errors;
-			if (repair.ok) {
-				repairDebug.validationErrors = secondErrors;
-				if (secondErrors.length > 0) repairDebug.failureReason = "validation_failed";
-			}
+			repairDebug.validationErrors = repair.ok ? secondErrors : [];
+			if (repair.ok && secondErrors.length > 0) repairDebug.failureReason = "validation_failed";
+			config.onEvent?.({
+				type: "planner_model_call_complete",
+				taskId: input.taskId,
+				sessionId: input.sessionId,
+				attempt: "repair",
+				modelId: config.model.id,
+				modelProvider: config.model.provider,
+				stopReason: repairDebug.stopReason,
+				rawTextPreview: repairDebug.rawTextPreview,
+				toolCallCount: repairDebug.toolCallCount,
+				toolCallNames: repairDebug.toolCallNames,
+				rawToolArgsPreview: repairDebug.rawToolArgsPreview,
+				parsedPlanPreview: repairDebug.parsedPlanPreview,
+				validationErrors: repairDebug.validationErrors,
+				errors: secondErrors,
+				failureReason: repairDebug.failureReason,
+			});
 
 			if (repair.ok && secondErrors.length === 0) {
 				assertValidWorkflowPlan(repair.plan, validationContext);

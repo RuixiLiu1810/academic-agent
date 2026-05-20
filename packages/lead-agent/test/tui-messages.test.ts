@@ -69,7 +69,7 @@ describe("RunResultComponent", () => {
 		expect(text).toContain("No review memo");
 	});
 
-	it("render includes the plan summary when available", () => {
+	it("render does not prepend the plan summary to the final output", () => {
 		const theme = createLeadTuiTheme();
 		const markdownTheme = createLeadMarkdownTheme();
 		const comp = new RunResultComponent(
@@ -80,7 +80,8 @@ describe("RunResultComponent", () => {
 			markdownTheme,
 		);
 		const text = comp.render(80).join("\n");
-		expect(text).toContain("reviewer pass and return the accepted memo");
+		expect(text).not.toContain("reviewer pass and return the accepted memo");
+		expect(text).toContain("All citations validated.");
 	});
 
 	it("render returns non-empty for direct dispatch (accepted undefined)", () => {
