@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createAgentHostServices, type ModelRegistry } from "@mariozechner/pi-agent-host";
+import { formatDebugModel, writeLeadAgentDebug } from "../debug.js";
 import {
 	type AcademicTaskType,
 	createLeadAgentRuntime,
@@ -219,6 +220,22 @@ export async function runLeadAgentCli(argv: string[], io: LeadAgentCliIo = {}): 
 		resume: args.resume,
 		session: args.session,
 		fork: args.fork,
+	});
+	writeLeadAgentDebug("cli.runtime", {
+		cwd,
+		appMode: args.appMode ?? (process.stdin.isTTY ? "tui" : "markdown"),
+		modelSource: args.model !== undefined || args.provider !== undefined ? "cli" : "settings",
+		model: formatDebugModel(resolvedModel),
+		plannerModel: formatDebugModel(resolvedModel),
+		settingsModel: {
+			provider: services.settingsManager.getDefaultProvider() ?? null,
+			id: services.settingsManager.getDefaultModel() ?? null,
+		},
+		thinkingLevel: resolvedThinkingLevel ?? null,
+		dispatchMode: args.dispatchMode ?? "auto",
+		profileId: args.profileId ?? null,
+		taskType: args.taskType ?? "auto",
+		sessionId: sessionManager.getSessionId(),
 	});
 	const runtime = createLeadAgentRuntime({
 		cwd,

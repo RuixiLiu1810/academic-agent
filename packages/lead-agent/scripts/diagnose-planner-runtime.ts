@@ -16,6 +16,7 @@ import chalk from "chalk";
 import { createAgentHostServices } from "@mariozechner/pi-agent-host";
 import type { ModelRegistry } from "@mariozechner/pi-agent-host";
 import { createExecutionTrace } from "@mariozechner/pi-agent-contracts";
+import { pathToFileURL } from "node:url";
 import { createLeadAgentRuntime, type LeadAgentRunEvent, type LeadAgentModel } from "../src/index.js";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -99,6 +100,25 @@ function classifyReason(reason: string, repairAttempted: boolean): string {
 	}
 }
 
+export function detectRoute(events: ReadonlyArray<Pick<LeadAgentRunEvent, "type">>): "workflow" | "direct" | "unknown" {
+	if (events.some((event) => event.type === "workflow_start" || event.type === "worker_start")) {
+		return "workflow";
+	}
+	if (events.some((event) => event.type === "synthesis_start")) {
+		return "direct";
+	}
+	return "unknown";
+}
+
+export function didPlannerRecover(events: ReadonlyArray<Pick<LeadAgentRunEvent, "type">>): boolean {
+	return events.some((event) => event.type === "planner_error") && events.some((event) => event.type === "planner_complete");
+}
+
+function isExecutedAsMain(argv: readonly string[] = process.argv, importMetaUrl: string = import.meta.url): boolean {
+	const scriptPath = argv[1];
+	return scriptPath !== undefined && pathToFileURL(scriptPath).href === importMetaUrl;
+}
+
 // ── MAIN ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -158,7 +178,7 @@ async function main(): Promise<void> {
 				producedArtifacts: [],
 				warnings: [],
 				openQuestions: [],
-				executionTrace: createExecutionTrace(`stub-${ctx.stepId}`),
+				executionTrace: createExecutionTrace(`stub-${ctx.taskId}`),
 			};
 		},
 	});
@@ -181,7 +201,10 @@ async function main(): Promise<void> {
 
 	// ── Planner error analysis ─────────────────────────────────────────────────
 	const errorEvent = events.find((e) => e.type === "planner_error");
-	if (errorEvent && errorEvent.type === "planner_error") {
+	const completeEvent = events.find((e) => e.type === "planner_complete");
+	const route = detectRoute(events);
+	const recovered = didPlannerRecover(events);
+	if (errorEvent && errorEvent.type === "planner_error" && !completeEvent) {
 		process.stdout.write(chalk.red.bold("  PLANNER FAILED\n") + thin + "\n");
 		process.stdout.write(chalk.bold("  reason          ") + chalk.red(errorEvent.reason) + "\n");
 		process.stdout.write(chalk.bold("  repairAttempted ") + (errorEvent.repairAttempted ? chalk.yellow("true") : chalk.gray("false")) + "\n");
@@ -226,25 +249,39 @@ async function main(): Promise<void> {
 		process.stdout.write("\n");
 		process.exit(1);
 	} else {
-		// No planner_error — check planner_complete
-		const completeEvent = events.find((e) => e.type === "planner_complete");
+		if (errorEvent && errorEvent.type === "planner_error" && recovered) {
+			process.stdout.write(chalk.yellow.bold("  PLANNER RECOVERED\n") + thin + "\n");
+			process.stdout.write(chalk.bold("  reason          ") + chalk.yellow(errorEvent.reason) + "\n");
+			process.stdout.write(
+				chalk.bold("  repairAttempted ") + (errorEvent.repairAttempted ? chalk.yellow("true") : chalk.gray("false")) + "\n",
+			);
+			process.stdout.write(chalk.bold("  errorName       ") + chalk.gray(errorEvent.errorName) + "\n");
+			process.stdout.write(chalk.bold("  Classification: ") + chalk.white(classifyReason(errorEvent.reason, errorEvent.repairAttempted)) + "\n\n");
+			process.stdout.write("  Heuristic fallback continued into execution.\n\n");
+		}
+		// No fatal planner_error — check planner_complete
 		if (completeEvent) {
 			process.stdout.write(chalk.green.bold("  PLANNER SUCCEEDED\n"));
-			process.stdout.write("  No planner_error event emitted.\n");
+			process.stdout.write(
+				errorEvent ? "  planner_error was emitted, but execution recovered.\n" : "  No planner_error event emitted.\n",
+			);
 			process.stdout.write("  The '未能生成可执行的工作流计划' failure cannot be reproduced with this model/config.\n\n");
 		} else {
 			process.stdout.write(chalk.yellow("  No planner_complete event (may have gone direct mode).\n"));
 		}
-		const directStart = events.find((e) => e.type === "synthesis_start");
-		if (directStart) {
+		if (route === "workflow") {
+			process.stdout.write("  Route: " + chalk.cyan("workflow") + "\n");
+		} else if (route === "direct") {
 			process.stdout.write("  Route: " + chalk.cyan("direct synthesis") + " (no worker dispatch)\n");
 		}
 		process.stdout.write("\n  finalOutput preview: " + chalk.white(result.finalOutput.slice(0, 120)) + "\n\n");
 	}
 }
 
-main().catch((e) => {
-	process.stderr.write(chalk.red(`\nError: ${e instanceof Error ? e.message : String(e)}\n`));
-	if (e instanceof Error && e.stack) process.stderr.write(chalk.gray(e.stack) + "\n");
-	process.exit(1);
-});
+if (isExecutedAsMain()) {
+	main().catch((e) => {
+		process.stderr.write(chalk.red(`\nError: ${e instanceof Error ? e.message : String(e)}\n`));
+		if (e instanceof Error && e.stack) process.stderr.write(chalk.gray(e.stack) + "\n");
+		process.exit(1);
+	});
+}

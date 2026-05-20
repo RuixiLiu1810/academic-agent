@@ -21,6 +21,7 @@ import {
 } from "@mariozechner/pi-agent-host";
 import type { ToolDefinition } from "@mariozechner/pi-agent-host/extensions";
 import type { ArtifactStore } from "@mariozechner/pi-artifact-core";
+import { formatDebugModel, writeLeadAgentDebug } from "./debug.js";
 import { createArxivProvider } from "./literature/providers/arxiv.js";
 import { createCrossrefProvider } from "./literature/providers/crossref.js";
 import { createPubMedProvider } from "./literature/providers/pubmed.js";
@@ -194,6 +195,10 @@ export interface LeadAgentRuntimeOptions {
 	workerRunner?: LeadAgentWorkerRunner;
 	directRunner?: LeadAgentDirectRunner;
 	workflowPlanner?: WorkflowPlanner;
+	workflowPlannerFactory?: (context: {
+		model: LeadAgentModel | undefined;
+		profiles: readonly WorkerProfile[];
+	}) => WorkflowPlanner;
 	literatureSearch?: LiteratureSearchConfig;
 	workspace?: LeadSessionWorkspace;
 	artifactDir?: string;
@@ -1098,24 +1103,40 @@ function createDefaultWorkflowWorkerRunner(
 
 export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): LeadAgentRuntime {
 	const profiles = options.profiles ?? loadAcademicProfilesFromDir();
-	const plannerModel = options.plannerModel ?? options.model;
-	// Priority: 1. injected workflowPlanner  2. plannerModel/model → LLM planner  3. heuristic workflow planner
-	const workflowPlanner =
-		options.workflowPlanner ??
-		(plannerModel
-			? createLlmWorkflowPlanner({
-					model: plannerModel,
-					templates: WORKFLOW_TEMPLATES,
-					profiles,
-				})
-			: createHeuristicWorkflowPlanner(profiles));
 	const sessionManager = options.sessionManager ?? SessionManager.inMemory(options.cwd ?? process.cwd());
 
 	// Mutable refs so setModel() can update them after creation
 	const modelRef: { value: LeadAgentModel | undefined } = { value: options.model };
+	const hasPinnedPlannerModel = options.plannerModel !== undefined;
+	const plannerModelRef: { value: LeadAgentModel | undefined } = { value: options.plannerModel ?? options.model };
+	const buildWorkflowPlanner = (model: LeadAgentModel | undefined): WorkflowPlanner => {
+		if (options.workflowPlanner) {
+			return options.workflowPlanner;
+		}
+		if (options.workflowPlannerFactory) {
+			return options.workflowPlannerFactory({ model, profiles });
+		}
+		return model
+			? createLlmWorkflowPlanner({
+					model,
+					templates: WORKFLOW_TEMPLATES,
+					profiles,
+				})
+			: createHeuristicWorkflowPlanner(profiles);
+	};
+	const workflowPlannerRef: { value: WorkflowPlanner } = { value: buildWorkflowPlanner(plannerModelRef.value) };
 	const thinkingLevelRef: { value: ThinkingLevel | undefined } = { value: options.thinkingLevel };
 	const toolsRef: { value: string[] | undefined } = { value: options.tools };
 	const noToolsRef: { value: "all" | "builtin" } = { value: options.noTools ?? "all" };
+	writeLeadAgentDebug("runtime.create", {
+		cwd: sessionManager.getCwd(),
+		model: formatDebugModel(modelRef.value),
+		plannerModel: formatDebugModel(plannerModelRef.value),
+		thinkingLevel: thinkingLevelRef.value ?? null,
+		plannerPinned: hasPinnedPlannerModel,
+		hasInjectedWorkflowPlanner: options.workflowPlanner !== undefined,
+		hasWorkflowPlannerFactory: options.workflowPlannerFactory !== undefined,
+	});
 
 	const directRunner =
 		options.directRunner ??
@@ -1133,6 +1154,21 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 	async function runImpl(request: LeadAgentTaskRequest): Promise<LeadAgentResult> {
 		const taskId = request.taskId ?? `lead-task-${Date.now()}`;
 		const sessionId = sessionManager.getSessionId();
+		const emitEvent = (event: LeadAgentRunEvent): void => {
+			if (event.type === "planner_start" || event.type === "planner_complete" || event.type === "planner_error") {
+				writeLeadAgentDebug(`event.${event.type}`, event);
+			}
+			request.onEvent?.(event);
+		};
+		writeLeadAgentDebug("runtime.run", {
+			taskId,
+			sessionId,
+			objective: request.objective,
+			dispatchMode: request.dispatchMode ?? "auto",
+			profileId: request.profileId ?? null,
+			model: formatDebugModel(modelRef.value),
+			plannerModel: formatDebugModel(plannerModelRef.value),
+		});
 		sessionManager.appendMessage({
 			role: "user",
 			content: [{ type: "text", text: request.objective }],
@@ -1198,17 +1234,17 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			conversationContext,
 		});
 		let workflowPlan: WorkflowPlan;
-		request.onEvent?.({
+		emitEvent({
 			type: "planner_start",
 			taskId,
 			sessionId,
 			objectivePreview: objectivePreview(request.objective),
 		});
 		try {
-			workflowPlan = await workflowPlanner.plan(planningInput);
+			workflowPlan = await workflowPlannerRef.value.plan(planningInput);
 		} catch (e) {
 			if (e instanceof PlannerValidationError) {
-				request.onEvent?.({
+				emitEvent({
 					type: "planner_error",
 					taskId,
 					sessionId,
@@ -1240,7 +1276,7 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			workflowPlan = createSingleStepWorkflowPlan(taskId, sessionId, request, decision, profiles);
 		}
 		const workflowDecision = decisionForWorkflowPlan(workflowPlan, decision);
-		request.onEvent?.({
+		emitEvent({
 			type: "planner_complete",
 			taskId,
 			sessionId,
@@ -1402,6 +1438,16 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 		setModel(model, thinkingLevel) {
 			modelRef.value = model;
 			thinkingLevelRef.value = thinkingLevel;
+			if (!options.workflowPlanner && !hasPinnedPlannerModel) {
+				plannerModelRef.value = model;
+				workflowPlannerRef.value = buildWorkflowPlanner(plannerModelRef.value);
+			}
+			writeLeadAgentDebug("runtime.setModel", {
+				model: formatDebugModel(modelRef.value),
+				plannerModel: formatDebugModel(plannerModelRef.value),
+				thinkingLevel: thinkingLevelRef.value ?? null,
+				plannerTracksModel: !options.workflowPlanner && !hasPinnedPlannerModel,
+			});
 		},
 		compactAcademic(currentObjective) {
 			return compactLeadAcademicSession({
