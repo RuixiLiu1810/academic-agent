@@ -226,9 +226,15 @@ describe("lead-agent runtime progress events", () => {
 					});
 				},
 			},
-			workerRunner: async () => {
-				throw new Error("worker should not run");
-			},
+			workerRunner: async (request) => ({
+				taskId: request.taskId,
+				status: "success",
+				summary: "done",
+				producedArtifacts: [],
+				warnings: [],
+				openQuestions: [],
+				executionTrace: createExecutionTrace("planner-error-fallback-worker"),
+			}),
 		});
 
 		await runtime.run({
@@ -250,5 +256,75 @@ describe("lead-agent runtime progress events", () => {
 			expect(errorEvent.firstErrors).toContain("Workflow plans must contain at least one step");
 			expect(errorEvent.secondErrors).toContain("Workflow plans must contain at least one step");
 		}
+	});
+
+	it("falls back to heuristic planner and emits planner_complete after planner_error", async () => {
+		const events: LeadAgentRunEvent[] = [];
+		const runtime = createLeadAgentRuntime({
+			cwd: makeTempDir(),
+			workflowPlanner: {
+				async plan() {
+					throw new PlannerValidationError({
+						objective: "搜索近五年一型糖尿病相关文献，做一个简单综述",
+						firstErrors: ["Workflow plans must contain at least one step"],
+						secondErrors: ["Workflow plans must contain at least one step"],
+						repairAttempted: true,
+						debugTrace: {
+							modelId: "gpt-5-mini",
+							modelProvider: "github-copilot",
+							calls: [
+								{
+									attempt: "first",
+									modelCallStarted: true,
+									stopReason: "stop",
+									toolCallCount: 0,
+									toolCallNames: [],
+									validationErrors: [],
+									failureReason: "no_tool_use_stop_reason",
+								},
+								{
+									attempt: "repair",
+									modelCallStarted: true,
+									stopReason: "stop",
+									toolCallCount: 0,
+									toolCallNames: [],
+									validationErrors: [],
+									failureReason: "no_tool_use_stop_reason",
+								},
+							],
+							finalFailureReason: "no_tool_use_stop_reason",
+						},
+					});
+				},
+			},
+			workerRunner: async (request) => ({
+				taskId: request.taskId,
+				status: "success",
+				summary: "done",
+				producedArtifacts: [],
+				warnings: [],
+				openQuestions: [],
+				executionTrace: createExecutionTrace("heuristic-fallback-worker"),
+			}),
+		});
+
+		const result = await runtime.run({
+			taskId: "task-heuristic-fallback",
+			objective: "搜索近五年一型糖尿病相关文献，做一个简单综述",
+			onEvent: (event) => events.push(event),
+		});
+
+		// planner_error is emitted for observability
+		expect(events.find((e) => e.type === "planner_error")).toBeDefined();
+		// heuristic fallback produces a valid plan → planner_complete fires
+		const completeEvent = events.find((e) => e.type === "planner_complete");
+		expect(completeEvent).toBeDefined();
+		expect(completeEvent).toMatchObject({ type: "planner_complete", mode: "workflow" });
+		// run does not return the error sentinel
+		expect(result.finalOutput).not.toBe("未能生成可执行的工作流计划。请检查输入后重试。");
+		// planner_error precedes planner_complete
+		const errorIdx = events.findIndex((e) => e.type === "planner_error");
+		const completeIdx = events.findIndex((e) => e.type === "planner_complete");
+		expect(errorIdx).toBeLessThan(completeIdx);
 	});
 });

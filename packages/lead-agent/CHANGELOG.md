@@ -15,3 +15,7 @@
 - Added `/settings` and `/setting` commands for the lead-agent CLI, including a TUI settings panel backed by agent-host model and thinking defaults.
 - Added lead-agent working memory context for planner, worker, direct, and academic compaction flows.
 - Added `/compact academic` for manual lead-agent academic working memory compaction.
+
+### Fixed
+
+- LLM planner failure (e.g., when using a weak default model such as `gpt-5-mini`) no longer returns "未能生成可执行的工作流计划" — the runtime now falls back to the heuristic planner and continues. A `planner_error` event is still emitted for observability.

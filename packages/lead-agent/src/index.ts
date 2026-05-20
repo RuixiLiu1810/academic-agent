@@ -1218,16 +1218,11 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 					secondErrors: e.secondErrors,
 					repairAttempted: e.repairAttempted,
 				});
-				const result: LeadAgentResult = {
-					taskId,
-					finalOutput: "未能生成可执行的工作流计划。请检查输入后重试。",
-					decision: { mode: "direct", reason: "Planner validation failed after repair" },
-					sessionId,
-				};
-				recordLeadAssistantMessage(sessionManager, result.finalOutput);
-				return result;
+				// LLM planner failed — fall back to heuristic planner before giving up.
+				workflowPlan = await createHeuristicWorkflowPlanner(profiles).plan(planningInput);
+			} else {
+				throw e;
 			}
-			throw e;
 		}
 		if (
 			(decision.mode === "worker" && workflowPlan.mode === "direct") ||
