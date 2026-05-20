@@ -92,6 +92,24 @@ export type LeadAgentRunEvent =
 			userVisibleSummary: string;
 	  }
 	| {
+			type: "planner_error";
+			taskId: string;
+			sessionId: string;
+			/** Error class name, always "PlannerValidationError" */
+			errorName: string;
+			/**
+			 * Final failure reason from the debug trace.
+			 * One of: "validation_failed" | "no_tool_use_stop_reason"
+			 *       | "no_submit_workflow_plan_tool_call" | "missing_plan_arg" | ...
+			 */
+			reason: string;
+			/** Validation errors from the first planner call. */
+			firstErrors: string[];
+			/** Validation errors from the repair attempt. */
+			secondErrors: string[];
+			repairAttempted: boolean;
+	  }
+	| {
 			type: "plan_summary";
 			taskId: string;
 			sessionId: string;
@@ -1190,6 +1208,16 @@ export function createLeadAgentRuntime(options: LeadAgentRuntimeOptions = {}): L
 			workflowPlan = await workflowPlanner.plan(planningInput);
 		} catch (e) {
 			if (e instanceof PlannerValidationError) {
+				request.onEvent?.({
+					type: "planner_error",
+					taskId,
+					sessionId,
+					errorName: e.name,
+					reason: e.debugTrace.finalFailureReason,
+					firstErrors: e.firstErrors,
+					secondErrors: e.secondErrors,
+					repairAttempted: e.repairAttempted,
+				});
 				const result: LeadAgentResult = {
 					taskId,
 					finalOutput: "未能生成可执行的工作流计划。请检查输入后重试。",

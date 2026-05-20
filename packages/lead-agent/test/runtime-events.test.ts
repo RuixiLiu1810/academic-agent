@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { createExecutionTrace, type WorkerResult } from "@mariozechner/pi-agent-contracts";
 import { afterEach, describe, expect, it } from "vitest";
 import { createLeadAgentRuntime, type LeadAgentRunEvent } from "../src/index.js";
+import { PlannerValidationError } from "../src/orchestration/llm-planner.js";
 
 let tempDirs: string[] = [];
 
@@ -180,5 +181,74 @@ describe("lead-agent runtime progress events", () => {
 			acceptedArtifactCount: 0,
 			rejectedStepCount: 0,
 		});
+	});
+
+	it("emits planner_error event when planner throws PlannerValidationError", async () => {
+		const events: LeadAgentRunEvent[] = [];
+		const runtime = createLeadAgentRuntime({
+			cwd: makeTempDir(),
+			workflowPlanner: {
+				async plan() {
+					throw new PlannerValidationError({
+						objective: "搜索近五年一型糖尿病相关文献，做一个简单综述",
+						firstErrors: ["Workflow plans must contain at least one step"],
+						secondErrors: ["Workflow plans must contain at least one step"],
+						repairAttempted: true,
+						debugTrace: {
+							modelId: "test-model",
+							modelProvider: "test-provider",
+							calls: [
+								{
+									attempt: "first",
+									modelCallStarted: true,
+									stopReason: "toolUse",
+									toolCallCount: 1,
+									toolCallNames: ["submit_workflow_plan"],
+									rawToolArgsPreview: '{"plan":{"mode":"workflow","steps":[]}}',
+									parsedPlanPreview: '{"mode":"workflow","steps":[]}',
+									validationErrors: ["Workflow plans must contain at least one step"],
+									failureReason: "validation_failed",
+								},
+								{
+									attempt: "repair",
+									modelCallStarted: true,
+									stopReason: "toolUse",
+									toolCallCount: 1,
+									toolCallNames: ["submit_workflow_plan"],
+									rawToolArgsPreview: '{"plan":{"mode":"workflow","steps":[]}}',
+									parsedPlanPreview: '{"mode":"workflow","steps":[]}',
+									validationErrors: ["Workflow plans must contain at least one step"],
+									failureReason: "validation_failed",
+								},
+							],
+							finalFailureReason: "validation_failed",
+						},
+					});
+				},
+			},
+			workerRunner: async () => {
+				throw new Error("worker should not run");
+			},
+		});
+
+		await runtime.run({
+			taskId: "task-planner-error-event",
+			objective: "搜索近五年一型糖尿病相关文献，做一个简单综述",
+			onEvent: (event) => events.push(event),
+		});
+
+		const errorEvent = events.find((e) => e.type === "planner_error");
+		expect(errorEvent).toBeDefined();
+		expect(errorEvent).toMatchObject({
+			type: "planner_error",
+			taskId: "task-planner-error-event",
+			errorName: "PlannerValidationError",
+			reason: "validation_failed",
+			repairAttempted: true,
+		});
+		if (errorEvent?.type === "planner_error") {
+			expect(errorEvent.firstErrors).toContain("Workflow plans must contain at least one step");
+			expect(errorEvent.secondErrors).toContain("Workflow plans must contain at least one step");
+		}
 	});
 });

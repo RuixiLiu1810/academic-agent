@@ -233,4 +233,87 @@ describe("createLlmWorkflowPlanner", () => {
 		expect(result.mode).toBe("direct");
 		expect(result.steps).toHaveLength(0);
 	});
+
+	// --- debug trace tests ---
+
+	it("debugTrace.calls[0].failureReason=no_tool_use_stop_reason and rawTextPreview when model narrates instead of calling tool", async () => {
+		const { faux, planner } = makePlanner();
+		faux.setResponses([
+			fauxAssistantMessage("Just thinking out loud.", { stopReason: "stop" }),
+			fauxAssistantMessage("Still no tool call.", { stopReason: "stop" }),
+		]);
+
+		const err = await planner.plan(baseInput).catch((e) => e);
+		expect(err).toBeInstanceOf(PlannerValidationError);
+		const pve = err as PlannerValidationError;
+		expect(pve.repairAttempted).toBe(true);
+		expect(pve.debugTrace.calls[0]?.attempt).toBe("first");
+		expect(pve.debugTrace.calls[1]?.attempt).toBe("repair");
+		expect(pve.debugTrace.calls[0]?.failureReason).toBe("no_tool_use_stop_reason");
+		expect(pve.debugTrace.calls[0]?.rawTextPreview).toContain("Just thinking");
+		expect(pve.debugTrace.finalFailureReason).toBe("no_tool_use_stop_reason");
+		expect(pve.debugTrace.modelId).toBeTruthy();
+		expect(pve.debugTrace.modelProvider).toBeTruthy();
+	});
+
+	it("debugTrace.calls[0].failureReason=missing_plan_arg and rawToolArgsPreview when tool args lack plan key", async () => {
+		const { faux, planner } = makePlanner();
+		faux.setResponses([
+			fauxAssistantMessage(fauxToolCall("submit_workflow_plan", { wrongKey: "oops" }), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("submit_workflow_plan", { wrongKey: "still oops" }), {
+				stopReason: "toolUse",
+			}),
+		]);
+
+		const err = await planner.plan(baseInput).catch((e) => e);
+		expect(err).toBeInstanceOf(PlannerValidationError);
+		const pve = err as PlannerValidationError;
+		expect(pve.debugTrace.calls[0]?.failureReason).toBe("missing_plan_arg");
+		expect(pve.debugTrace.calls[0]?.rawToolArgsPreview).toContain("wrongKey");
+	});
+
+	it("debugTrace.calls[0].failureReason=validation_failed with validationErrors and parsedPlanPreview for an invalid plan", async () => {
+		const { faux, planner } = makePlanner();
+		const emptyStepsPlan = { ...validPlan, mode: "workflow" as const, steps: [] };
+		faux.setResponses([
+			fauxAssistantMessage(fauxToolCall("submit_workflow_plan", { plan: emptyStepsPlan }), {
+				stopReason: "toolUse",
+			}),
+			fauxAssistantMessage(fauxToolCall("submit_workflow_plan", { plan: emptyStepsPlan }), {
+				stopReason: "toolUse",
+			}),
+		]);
+
+		const err = await planner.plan(baseInput).catch((e) => e);
+		expect(err).toBeInstanceOf(PlannerValidationError);
+		const pve = err as PlannerValidationError;
+		expect(pve.repairAttempted).toBe(true);
+		expect(pve.debugTrace.calls[0]?.failureReason).toBe("validation_failed");
+		expect(pve.debugTrace.calls[0]?.validationErrors.length).toBeGreaterThan(0);
+		expect(pve.debugTrace.calls[0]?.parsedPlanPreview).toContain("workflow");
+		expect(pve.debugTrace.calls[1]?.failureReason).toBe("validation_failed");
+		expect(pve.debugTrace.calls[1]?.validationErrors.length).toBeGreaterThan(0);
+		expect(pve.debugTrace.finalFailureReason).toBe("validation_failed");
+	});
+
+	it("debugTrace.calls[0].toolCallCount and toolCallNames are recorded even when stopReason=toolUse", async () => {
+		const { faux, planner } = makePlanner();
+		// Both attempts submit a plan with an unknown profile
+		const badProfilePlan = { ...validPlan, steps: [{ ...validPlan.steps[0]!, profileId: "ghost-worker" }] };
+		faux.setResponses([
+			fauxAssistantMessage(fauxToolCall("submit_workflow_plan", { plan: badProfilePlan }), {
+				stopReason: "toolUse",
+			}),
+			fauxAssistantMessage(fauxToolCall("submit_workflow_plan", { plan: badProfilePlan }), {
+				stopReason: "toolUse",
+			}),
+		]);
+
+		const err = await planner.plan(baseInput).catch((e) => e);
+		expect(err).toBeInstanceOf(PlannerValidationError);
+		const pve = err as PlannerValidationError;
+		expect(pve.debugTrace.calls[0]?.toolCallCount).toBe(1);
+		expect(pve.debugTrace.calls[0]?.toolCallNames).toEqual(["submit_workflow_plan"]);
+		expect(pve.debugTrace.calls[0]?.stopReason).toBe("toolUse");
+	});
 });

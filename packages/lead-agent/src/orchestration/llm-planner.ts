@@ -1,6 +1,6 @@
 import type { ArtifactBrief, ArtifactRef, WorkerProfile, WorkflowPlan } from "@mariozechner/pi-agent-contracts";
 import { WorkflowPlanSchema } from "@mariozechner/pi-agent-contracts";
-import type { Context, Tool, ToolCall } from "@mariozechner/pi-ai";
+import type { Context, TextContent, Tool, ToolCall } from "@mariozechner/pi-ai";
 import { completeSimple } from "@mariozechner/pi-ai";
 import type { LeadAgentModel } from "../index.js";
 import { assertValidWorkflowPlan, validateWorkflowPlan } from "./planner.js";
@@ -13,12 +13,41 @@ export interface LlmWorkflowPlannerConfig {
 	profiles: readonly WorkerProfile[];
 }
 
+export interface PlannerCallDebugEntry {
+	attempt: "first" | "repair";
+	modelCallStarted: boolean;
+	stopReason?: string;
+	/** First 200 chars of any text block in the response, for diagnosing when the model narrates instead of calling the tool. */
+	rawTextPreview?: string;
+	toolCallCount: number;
+	toolCallNames: string[];
+	/** First 300 chars of JSON.stringify(toolCall.arguments) */
+	rawToolArgsPreview?: string;
+	/** First 300 chars of JSON.stringify(plan) once args.plan is extracted */
+	parsedPlanPreview?: string;
+	validationErrors: string[];
+	/**
+	 * One of: "ok" | "no_tool_use_stop_reason" | "no_submit_workflow_plan_tool_call"
+	 *       | "multiple_submit_workflow_plan_tool_calls" | "missing_plan_arg" | "validation_failed"
+	 */
+	failureReason: string;
+}
+
+export interface PlannerDebugTrace {
+	modelId: string;
+	modelProvider: string;
+	calls: PlannerCallDebugEntry[];
+	finalFailureReason: string;
+}
+
 export class PlannerValidationError extends Error {
 	readonly objective: string;
 	readonly firstErrors: string[];
 	readonly secondErrors: string[];
 	readonly firstPlan?: unknown;
 	readonly secondPlan?: unknown;
+	readonly repairAttempted: boolean;
+	readonly debugTrace: PlannerDebugTrace;
 
 	constructor(options: {
 		objective: string;
@@ -26,6 +55,8 @@ export class PlannerValidationError extends Error {
 		secondErrors: string[];
 		firstPlan?: unknown;
 		secondPlan?: unknown;
+		repairAttempted: boolean;
+		debugTrace: PlannerDebugTrace;
 	}) {
 		super(
 			`LLM planner failed after repair attempt.\n` +
@@ -38,6 +69,8 @@ export class PlannerValidationError extends Error {
 		this.secondErrors = options.secondErrors;
 		this.firstPlan = options.firstPlan;
 		this.secondPlan = options.secondPlan;
+		this.repairAttempted = options.repairAttempted;
+		this.debugTrace = options.debugTrace;
 	}
 }
 
@@ -191,30 +224,60 @@ function buildContext(userMessage: string): Context {
 	};
 }
 
-async function runPlannerCall(context: Context, config: LlmWorkflowPlannerConfig): Promise<PlannerCallResult> {
+async function runPlannerCall(
+	context: Context,
+	config: LlmWorkflowPlannerConfig,
+	attempt: "first" | "repair",
+): Promise<{ result: PlannerCallResult; debug: PlannerCallDebugEntry }> {
+	const debug: PlannerCallDebugEntry = {
+		attempt,
+		modelCallStarted: false,
+		toolCallCount: 0,
+		toolCallNames: [],
+		validationErrors: [],
+		failureReason: "",
+	};
+
+	debug.modelCallStarted = true;
 	const msg = await completeSimple(config.model, context);
+	debug.stopReason = msg.stopReason;
+
+	const textBlocks = msg.content.filter((c) => c.type === "text") as TextContent[];
+	if (textBlocks.length > 0) {
+		debug.rawTextPreview = textBlocks[0]!.text.slice(0, 200);
+	}
 
 	if (msg.stopReason !== "toolUse") {
-		return { ok: false, errors: [`Expected stopReason=toolUse, got ${msg.stopReason}`] };
+		debug.failureReason = "no_tool_use_stop_reason";
+		return { result: { ok: false, errors: [`Expected stopReason=toolUse, got ${msg.stopReason}`] }, debug };
 	}
 
-	const toolCalls = msg.content.filter(
-		(c) => c.type === "toolCall" && (c as ToolCall).name === "submit_workflow_plan",
-	) as ToolCall[];
+	const allToolCalls = msg.content.filter((c) => c.type === "toolCall") as ToolCall[];
+	debug.toolCallCount = allToolCalls.length;
+	debug.toolCallNames = allToolCalls.map((tc) => tc.name);
+
+	const toolCalls = allToolCalls.filter((tc) => tc.name === "submit_workflow_plan");
 
 	if (toolCalls.length === 0) {
-		return { ok: false, errors: ["No submit_workflow_plan tool call in response"] };
+		debug.failureReason = "no_submit_workflow_plan_tool_call";
+		return { result: { ok: false, errors: ["No submit_workflow_plan tool call in response"] }, debug };
 	}
 	if (toolCalls.length > 1) {
-		return { ok: false, errors: [`Expected exactly 1 tool call, got ${toolCalls.length}`] };
+		debug.failureReason = "multiple_submit_workflow_plan_tool_calls";
+		return { result: { ok: false, errors: [`Expected exactly 1 tool call, got ${toolCalls.length}`] }, debug };
 	}
 
 	const args = toolCalls[0]!.arguments;
+	debug.rawToolArgsPreview = JSON.stringify(args).slice(0, 300);
+
 	if (!args.plan || typeof args.plan !== "object") {
-		return { ok: false, errors: ["Tool call missing args.plan or plan is not an object"] };
+		debug.failureReason = "missing_plan_arg";
+		return { result: { ok: false, errors: ["Tool call missing args.plan or plan is not an object"] }, debug };
 	}
 
-	return { ok: true, plan: args.plan };
+	debug.parsedPlanPreview = JSON.stringify(args.plan).slice(0, 300);
+	debug.failureReason = "ok";
+	return { result: { ok: true, plan: args.plan }, debug };
 }
 
 export function createLlmWorkflowPlanner(config: LlmWorkflowPlannerConfig): WorkflowPlanner {
@@ -228,8 +291,16 @@ export function createLlmWorkflowPlanner(config: LlmWorkflowPlannerConfig): Work
 			};
 
 			// First attempt
-			const first = await runPlannerCall(buildContext(buildUserMessage(input, config)), config);
+			const { result: first, debug: firstDebug } = await runPlannerCall(
+				buildContext(buildUserMessage(input, config)),
+				config,
+				"first",
+			);
 			const firstErrors = first.ok ? validateWorkflowPlan(first.plan, validationContext) : first.errors;
+			if (first.ok) {
+				firstDebug.validationErrors = firstErrors;
+				if (firstErrors.length > 0) firstDebug.failureReason = "validation_failed";
+			}
 
 			if (first.ok && firstErrors.length === 0) {
 				assertValidWorkflowPlan(first.plan, validationContext);
@@ -238,16 +309,28 @@ export function createLlmWorkflowPlanner(config: LlmWorkflowPlannerConfig): Work
 
 			// Repair attempt
 			const firstPlan = first.ok ? first.plan : null;
-			const repair = await runPlannerCall(
+			const { result: repair, debug: repairDebug } = await runPlannerCall(
 				buildContext(buildRepairUserMessage(input, config, firstErrors, firstPlan)),
 				config,
+				"repair",
 			);
 			const secondErrors = repair.ok ? validateWorkflowPlan(repair.plan, validationContext) : repair.errors;
+			if (repair.ok) {
+				repairDebug.validationErrors = secondErrors;
+				if (secondErrors.length > 0) repairDebug.failureReason = "validation_failed";
+			}
 
 			if (repair.ok && secondErrors.length === 0) {
 				assertValidWorkflowPlan(repair.plan, validationContext);
 				return repair.plan as WorkflowPlan;
 			}
+
+			const debugTrace: PlannerDebugTrace = {
+				modelId: config.model.id,
+				modelProvider: config.model.provider,
+				calls: [firstDebug, repairDebug],
+				finalFailureReason: repairDebug.failureReason || firstDebug.failureReason,
+			};
 
 			throw new PlannerValidationError({
 				objective: input.objective,
@@ -255,6 +338,8 @@ export function createLlmWorkflowPlanner(config: LlmWorkflowPlannerConfig): Work
 				secondErrors,
 				firstPlan: first.ok ? first.plan : undefined,
 				secondPlan: repair.ok ? repair.plan : undefined,
+				repairAttempted: true,
+				debugTrace,
 			});
 		},
 	};
